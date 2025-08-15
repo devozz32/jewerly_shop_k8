@@ -1,0 +1,34 @@
+version: '3.8'
+services:
+  frontend:
+    image: ${FRONTEND_IMAGE_NAME}:${FRONTEND_IMAGE_TAG}
+    container_name: jewelry-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - REACT_APP_API_BASE_URL=http://backend:8000/api
+      - REACT_APP_AUTH_BASE_URL=http://auth:8001
+      - REACT_APP_BACKEND_HOST=backend
+      - REACT_APP_BACKEND_PORT=8000
+
+  backend:
+    image: ${BACKEND_IMAGE_NAME}:${BACKEND_IMAGE_TAG}
+    container_name: jewelry-backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      - auth
+    environment:
+      - AUTH_SERVICE_URL=http://auth:8001
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+
+  auth:
+    image: ${AUTH_IMAGE_NAME}:${AUTH_IMAGE_TAG}
+    container_name: jewelry-auth
+    ports:
+      - "8001:8001"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
