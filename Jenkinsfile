@@ -10,9 +10,7 @@ pipeline {
     stages {
         stage('Clean Workspace') {
             steps {
-                script {
-                    cleanworkspace()
-                }
+                script { cleanworkspace() }
             }
         }
 
@@ -20,10 +18,111 @@ pipeline {
             steps {
                 checkout scm
                 script {
-                    // Detect project name from Git URL
                     env.PROJECT_NAME = getprojectnamefromgit()
                     echo "Detected PROJECT_NAME = ${env.PROJECT_NAME}"
                     echo "Branch: ${env.BRANCH_NAME}, Commit: ${env.GIT_COMMIT}"
+                }
+            }
+        }
+
+        stage('Install Lint Tools') {
+            steps {
+                sh 'pip install flake8'
+            }
+        }
+
+        stage('Lint All Services') {
+            steps {
+                script {
+                    def failed = false
+
+                    try {
+                        dir('backend') { sh 'flake8 .' }
+                        echo "Backend lint passed"
+                    } catch (err) {
+                        echo "Backend lint FAILED: ${err.getMessage()}"
+                        failed = true
+                    }
+
+                    try {
+                        dir('auth-service') { sh 'flake8 .' }
+                        echo "Auth Service lint passed"
+                    } catch (err) {
+                        echo "Auth Service lint FAILED: ${err.getMessage()}"
+                        failed = true
+                    }
+
+                    try {
+                        dir('jewelry-store') {
+                            sh 'npm ci'
+                            sh 'npm run lint'
+                        }
+                        echo "Frontend lint passed"
+                    } catch (err) {
+                        echo "Frontend lint FAILED: ${err.getMessage()}"
+                        failed = true
+                    }
+
+                    if (failed) {
+                        error("One or more lint checks failed. See above for details.")
+                    } else {
+                        echo "All lint checks passed for all services"
+                    }
+                }
+            }
+        }
+
+        stage('Unit Tests for All Services') {
+            steps {
+                script {
+                    def failed = false
+                    def results = []
+
+                    // Backend tests
+                    try {
+                        dir('backend') {
+                            sh 'pip install -r requirements.txt'
+                            sh 'pytest'
+                        }
+                        results << "Backend tests passed"
+                    } catch (err) {
+                        results << "Backend tests FAILED: ${err.getMessage()}"
+                        failed = true
+                    }
+
+                    // Auth Service tests
+                    try {
+                        dir('auth-service') {
+                            sh 'pip install -r requirements.txt'
+                            sh 'pytest'
+                        }
+                        results << "Auth Service tests passed"
+                    } catch (err) {
+                        results << "Auth Service tests FAILED: ${err.getMessage()}"
+                        failed = true
+                    }
+
+                    // Frontend tests
+                    try {
+                        dir('jewelry-store') {
+                            sh 'npm ci'
+                            sh 'npm test -- --watchAll=false'
+                        }
+                        results << "Frontend tests passed"
+                    } catch (err) {
+                        results << "Frontend tests FAILED: ${err.getMessage()}"
+                        failed = true
+                    }
+
+                    // Print summary
+                    echo "=== Unit Test Summary ==="
+                    results.each { echo it }
+
+                    if (failed) {
+                        error("One or more unit tests failed. See summary above.")
+                    } else {
+                        echo "All unit tests passed for all services"
+                    }
                 }
             }
         }
@@ -35,7 +134,6 @@ pipeline {
                     def authVersion     = getversion('auth-service/VERSION.txt')
                     def frontendVersion = getversion('jewelry-store/VERSION.txt')
 
-                    // Build tags with project name included
                     env.BACKEND_TAG  = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/backend:${backendVersion}.${env.BUILD_NUMBER}"
                     env.AUTH_TAG     = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/auth-service:${authVersion}.${env.BUILD_NUMBER}"
                     env.FRONTEND_TAG = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/jewelry-store:${frontendVersion}.${env.BUILD_NUMBER}"
