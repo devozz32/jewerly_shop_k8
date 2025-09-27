@@ -51,7 +51,7 @@ pipeline {
                         passwordVariable: 'NEXUS_PASS'
                     )]) {
                         sh """
-                        echo "Logging in to Docker registry: ${REGISTRY_URL_LOGIN}"
+                        echo "Logging in to Docker registry: ${REGISTRY_URL}"
                         docker login ${REGISTRY_URL} -u ${NEXUS_USER} -p ${NEXUS_PASS}
                         """
                     }
