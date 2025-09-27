@@ -5,7 +5,6 @@ pipeline {
 
     environment {
         REGISTRY_URL = "localhost:8082"
-       
     }
 
     stages {
@@ -20,7 +19,12 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
-                echo "Branch: ${env.BRANCH_NAME}, Commit: ${env.GIT_COMMIT}"
+                script {
+                    // Detect project name from Git URL
+                    env.PROJECT_NAME = getprojectnamefromgit()
+                    echo "Detected PROJECT_NAME = ${env.PROJECT_NAME}"
+                    echo "Branch: ${env.BRANCH_NAME}, Commit: ${env.GIT_COMMIT}"
+                }
             }
         }
 
@@ -31,9 +35,10 @@ pipeline {
                     def authVersion     = getversion('auth-service/VERSION.txt')
                     def frontendVersion = getversion('jewelry-store/VERSION.txt')
 
-                    env.BACKEND_TAG  = "${REGISTRY_URL}/backend:${backendVersion}.${env.BUILD_NUMBER}"
-                    env.AUTH_TAG     = "${REGISTRY_URL}/auth-service:${authVersion}.${env.BUILD_NUMBER}"
-                    env.FRONTEND_TAG = "${REGISTRY_URL}/jewelry-store:${frontendVersion}.${env.BUILD_NUMBER}"
+                    // Build tags with project name included
+                    env.BACKEND_TAG  = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/backend:${backendVersion}.${env.BUILD_NUMBER}"
+                    env.AUTH_TAG     = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/auth-service:${authVersion}.${env.BUILD_NUMBER}"
+                    env.FRONTEND_TAG = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/jewelry-store:${frontendVersion}.${env.BUILD_NUMBER}"
 
                     echo "Backend tag:  ${env.BACKEND_TAG}"
                     echo "Auth tag:     ${env.AUTH_TAG}"
@@ -51,8 +56,8 @@ pipeline {
                         passwordVariable: 'NEXUS_PASS'
                     )]) {
                         sh """
-                        echo "Logging in to Docker registry: ${REGISTRY_URL}"
-                        docker login ${REGISTRY_URL} -u ${NEXUS_USER} -p ${NEXUS_PASS}
+                        echo "Logging in to Docker registry: ${env.REGISTRY_URL}"
+                        docker login ${env.REGISTRY_URL} -u ${NEXUS_USER} -p ${NEXUS_PASS}
                         """
                     }
                 }
