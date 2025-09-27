@@ -26,9 +26,14 @@ pipeline {
         }
 
         stage('Install Lint Tools') {
-            steps {
-                sh 'pip install flake8'
-            }
+             steps {
+        sh """
+        echo "Installing Python + pip + flake8..."
+        apt-get update && apt-get install -y python3 python3-pip
+        python3 -m pip install --upgrade pip
+        pip3 install flake8
+        """
+    }
         }
 
         stage('Lint All Services') {
