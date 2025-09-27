@@ -4,7 +4,8 @@ pipeline {
     agent { label 'docker_agent' }
 
     environment {
-        REGISTRY_URL = "localhost:7000"
+        REGISTRY_URL = "localhost:8082"
+       
     }
 
     stages {
@@ -50,7 +51,7 @@ pipeline {
                         passwordVariable: 'NEXUS_PASS'
                     )]) {
                         sh """
-                        echo "Logging in to Docker registry: ${REGISTRY_URL}"
+                        echo "Logging in to Docker registry: ${REGISTRY_URL_LOGIN}"
                         docker login ${REGISTRY_URL} -u ${NEXUS_USER} -p ${NEXUS_PASS}
                         """
                     }
