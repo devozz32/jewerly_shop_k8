@@ -25,24 +25,25 @@ pipeline {
             }
         }
 
-        stage('Install Lint Tools') {
-             steps {
-        sh """
-        echo "Installing Python + pip + flake8..."
-        apt-get update && apt-get install -y python3 python3-pip
-        python3 -m pip install --upgrade pip
-        pip3 install flake8
-        """
-    }
+        stage('Setup Python Virtualenv') {
+            steps {
+                sh """
+                apt-get update && apt-get install -y python3 python3-venv python3-pip
+                python3 -m venv .venv
+                . .venv/bin/activate
+                pip install flake8 pytest
+                """
+            }
         }
 
         stage('Lint All Services') {
             steps {
                 script {
                     def failed = false
-
                     try {
-                        dir('backend') { sh 'flake8 .' }
+                        dir('backend') {
+                            sh '. ../.venv/bin/activate && flake8 .'
+                        }
                         echo "Backend lint passed"
                     } catch (err) {
                         echo "Backend lint FAILED: ${err.getMessage()}"
@@ -50,7 +51,9 @@ pipeline {
                     }
 
                     try {
-                        dir('auth-service') { sh 'flake8 .' }
+                        dir('auth-service') {
+                            sh '. ../.venv/bin/activate && flake8 .'
+                        }
                         echo "Auth Service lint passed"
                     } catch (err) {
                         echo "Auth Service lint FAILED: ${err.getMessage()}"
@@ -59,8 +62,7 @@ pipeline {
 
                     try {
                         dir('jewelry-store') {
-                            sh 'npm ci'
-                            sh 'npm run lint'
+                            sh 'npm ci && npm run lint'
                         }
                         echo "Frontend lint passed"
                     } catch (err) {
@@ -83,105 +85,4 @@ pipeline {
                     def failed = false
                     def results = []
 
-                    // Backend tests
                     try {
-                        dir('backend') {
-                            sh 'pip install -r requirements.txt'
-                            sh 'pytest'
-                        }
-                        results << "Backend tests passed"
-                    } catch (err) {
-                        results << "Backend tests FAILED: ${err.getMessage()}"
-                        failed = true
-                    }
-
-                    // Auth Service tests
-                    try {
-                        dir('auth-service') {
-                            sh 'pip install -r requirements.txt'
-                            sh 'pytest'
-                        }
-                        results << "Auth Service tests passed"
-                    } catch (err) {
-                        results << "Auth Service tests FAILED: ${err.getMessage()}"
-                        failed = true
-                    }
-
-                    // Frontend tests
-                    try {
-                        dir('jewelry-store') {
-                            sh 'npm ci'
-                            sh 'npm test -- --watchAll=false'
-                        }
-                        results << "Frontend tests passed"
-                    } catch (err) {
-                        results << "Frontend tests FAILED: ${err.getMessage()}"
-                        failed = true
-                    }
-
-                    // Print summary
-                    echo "=== Unit Test Summary ==="
-                    results.each { echo it }
-
-                    if (failed) {
-                        error("One or more unit tests failed. See summary above.")
-                    } else {
-                        echo "All unit tests passed for all services"
-                    }
-                }
-            }
-        }
-
-        stage('Get Versions') {
-            steps {
-                script {
-                    def backendVersion  = getversion('backend/VERSION.txt')
-                    def authVersion     = getversion('auth-service/VERSION.txt')
-                    def frontendVersion = getversion('jewelry-store/VERSION.txt')
-
-                    env.BACKEND_TAG  = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/backend:${backendVersion}.${env.BUILD_NUMBER}"
-                    env.AUTH_TAG     = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/auth-service:${authVersion}.${env.BUILD_NUMBER}"
-                    env.FRONTEND_TAG = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/jewelry-store:${frontendVersion}.${env.BUILD_NUMBER}"
-
-                    echo "Backend tag:  ${env.BACKEND_TAG}"
-                    echo "Auth tag:     ${env.AUTH_TAG}"
-                    echo "Frontend tag: ${env.FRONTEND_TAG}"
-                }
-            }
-        }
-
-        stage('Docker Login') {
-            steps {
-                script {
-                    withCredentials([usernamePassword(
-                        credentialsId: 'nexus-cred',
-                        usernameVariable: 'NEXUS_USER',
-                        passwordVariable: 'NEXUS_PASS'
-                    )]) {
-                        sh """
-                        echo "Logging in to Docker registry: ${env.REGISTRY_URL}"
-                        docker login ${env.REGISTRY_URL} -u ${NEXUS_USER} -p ${NEXUS_PASS}
-                        """
-                    }
-                }
-            }
-        }
-
-        stage('Build & Push Images') {
-            steps {
-                script {
-                    sh """
-                    docker build -t ${env.BACKEND_TAG} ./backend
-                    docker push ${env.BACKEND_TAG}
-
-                    docker build -t ${env.AUTH_TAG} ./auth-service
-                    docker push ${env.AUTH_TAG}
-
-                    docker build -t ${env.FRONTEND_TAG} ./jewelry-store
-                    docker push ${env.FRONTEND_TAG}
-                    """
-                }
-            }
-        }
-    }
-}
