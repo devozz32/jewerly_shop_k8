@@ -26,7 +26,20 @@ pipeline {
         }
 
 
-
+stage('Debug Environment') {
+    steps {
+        sh 'which python || true'
+        sh 'python --version || true'
+        sh 'which pip || true'
+        sh 'pip --version || true'
+        sh 'which pytest || true'
+        sh 'pytest --version || true'
+        sh 'which npm || true'
+        sh 'npm --version || true'
+        sh 'which node || true'
+        sh 'node --version || true'
+    }
+}
 
         stage('Unit Tests for All Services') {
             steps {
