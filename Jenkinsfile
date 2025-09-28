@@ -25,9 +25,6 @@ pipeline {
             }
         }
 
-
-
-
         stage('Unit Tests for All Services') {
             steps {
                 script {
@@ -37,7 +34,7 @@ pipeline {
                     // Backend tests
                     try {
                         dir('backend') {
-                            sh '. ../.venv/bin/activate && pip install -r requirements.txt && pytest'
+                            sh 'pip install -r requirements.txt && pytest'
                         }
                         results << "Backend tests passed"
                     } catch (err) {
@@ -48,7 +45,7 @@ pipeline {
                     // Auth Service tests
                     try {
                         dir('auth-service') {
-                            sh '. ../.venv/bin/activate && pip install -r requirements.txt && pytest'
+                            sh 'pip install -r requirements.txt && pytest'
                         }
                         results << "Auth Service tests passed"
                     } catch (err) {
@@ -128,5 +125,5 @@ pipeline {
                 """
             }
         }
-    } // <-- סוגר של stages
-} // <-- סוגר של pipeline
+    }
+}
