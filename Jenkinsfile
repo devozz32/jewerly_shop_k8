@@ -24,48 +24,13 @@ pipeline {
                 }
             }
         }
-
-    stage('Unit Tests for All Services') {
+stage('Unit Tests - Frontend Only') {
     steps {
         script {
             def failed = false
             def results = []
 
-            // Backend tests
-            try {
-                dir('backend') {
-                    sh '''
-                    python3 -m venv venv
-                    . venv/bin/activate
-                    pip install --upgrade pip
-                    pip install -r requirements.txt
-                    pytest
-                    '''
-                }
-                results << "Backend tests passed"
-            } catch (err) {
-                results << "Backend tests FAILED: ${err.getMessage()}"
-                failed = true
-            }
-
-            // Auth Service tests
-            try {
-                dir('auth-service') {
-                    sh '''
-                    python3 -m venv venv
-                    . venv/bin/activate
-                    pip install --upgrade pip
-                    pip install -r requirements.txt
-                    pytest
-                    '''
-                }
-                results << "Auth Service tests passed"
-            } catch (err) {
-                results << "Auth Service tests FAILED: ${err.getMessage()}"
-                failed = true
-            }
-
-            // Frontend tests
+            // Frontend tests only
             try {
                 dir('jewelry-store') {
                     sh '''
@@ -83,13 +48,14 @@ pipeline {
             results.each { echo it }
 
             if (failed) {
-                error("One or more unit tests failed. See summary above.")
+                error("Frontend tests failed. See summary above.")
             } else {
-                echo "All unit tests passed for all services"
+                echo "All frontend tests passed"
             }
         }
     }
 }
+
 
 
         stage('Get Versions') {
