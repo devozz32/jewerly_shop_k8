@@ -41,6 +41,24 @@ stage('Debug Environment') {
     }
 }
 
+
+        stage('Setup Environment') {
+    steps {
+        sh """
+        echo "Installing Python, pip, virtualenv and NodeJS..."
+        apt-get update
+        apt-get install -y python3 python3-venv python3-pip python3-dev build-essential curl
+        python3 -m venv .venv
+        . .venv/bin/activate && pip install --upgrade pip && pip install pytest flake8
+
+        curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+        apt-get install -y nodejs
+        node --version
+        npm --version
+        """
+    }
+}
+
         stage('Unit Tests for All Services') {
             steps {
                 script {
