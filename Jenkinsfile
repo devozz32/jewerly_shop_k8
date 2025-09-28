@@ -25,56 +25,72 @@ pipeline {
             }
         }
 
-        stage('Unit Tests for All Services') {
-            steps {
-                script {
-                    def failed = false
-                    def results = []
+    stage('Unit Tests for All Services') {
+    steps {
+        script {
+            def failed = false
+            def results = []
 
-                    // Backend tests
-                    try {
-                        dir('backend') {
-                            sh 'pip install -r requirements.txt && pytest'
-                        }
-                        results << "Backend tests passed"
-                    } catch (err) {
-                        results << "Backend tests FAILED: ${err.getMessage()}"
-                        failed = true
-                    }
-
-                    // Auth Service tests
-                    try {
-                        dir('auth-service') {
-                            sh 'pip install -r requirements.txt && pytest'
-                        }
-                        results << "Auth Service tests passed"
-                    } catch (err) {
-                        results << "Auth Service tests FAILED: ${err.getMessage()}"
-                        failed = true
-                    }
-
-                    // Frontend tests
-                    try {
-                        dir('jewelry-store') {
-                            sh 'npm ci && npm test -- --watchAll=false'
-                        }
-                        results << "Frontend tests passed"
-                    } catch (err) {
-                        results << "Frontend tests FAILED: ${err.getMessage()}"
-                        failed = true
-                    }
-
-                    echo "=== Unit Test Summary ==="
-                    results.each { echo it }
-
-                    if (failed) {
-                        error("One or more unit tests failed. See summary above.")
-                    } else {
-                        echo "All unit tests passed for all services"
-                    }
+            // Backend tests
+            try {
+                dir('backend') {
+                    sh '''
+                    python3 -m venv venv
+                    . venv/bin/activate
+                    pip install --upgrade pip
+                    pip install -r requirements.txt
+                    pytest
+                    '''
                 }
+                results << "Backend tests passed"
+            } catch (err) {
+                results << "Backend tests FAILED: ${err.getMessage()}"
+                failed = true
+            }
+
+            // Auth Service tests
+            try {
+                dir('auth-service') {
+                    sh '''
+                    python3 -m venv venv
+                    . venv/bin/activate
+                    pip install --upgrade pip
+                    pip install -r requirements.txt
+                    pytest
+                    '''
+                }
+                results << "Auth Service tests passed"
+            } catch (err) {
+                results << "Auth Service tests FAILED: ${err.getMessage()}"
+                failed = true
+            }
+
+            // Frontend tests
+            try {
+                dir('jewelry-store') {
+                    sh '''
+                    npm ci
+                    npm test -- --watchAll=false
+                    '''
+                }
+                results << "Frontend tests passed"
+            } catch (err) {
+                results << "Frontend tests FAILED: ${err.getMessage()}"
+                failed = true
+            }
+
+            echo "=== Unit Test Summary ==="
+            results.each { echo it }
+
+            if (failed) {
+                error("One or more unit tests failed. See summary above.")
+            } else {
+                echo "All unit tests passed for all services"
             }
         }
+    }
+}
+
 
         stage('Get Versions') {
             steps {
