@@ -10,9 +10,7 @@ pipeline {
     stages {
         stage('Clean Workspace') {
             steps {
-                script {
-                    cleanworkspace()
-                }
+                script { cleanworkspace() }
             }
         }
 
@@ -20,10 +18,94 @@ pipeline {
             steps {
                 checkout scm
                 script {
-                    // Detect project name from Git URL
                     env.PROJECT_NAME = getprojectnamefromgit()
                     echo "Detected PROJECT_NAME = ${env.PROJECT_NAME}"
                     echo "Branch: ${env.BRANCH_NAME}, Commit: ${env.GIT_COMMIT}"
+                }
+            }
+        }
+
+
+stage('Debug Environment') {
+    steps {
+        sh 'which python || true'
+        sh 'python --version || true'
+        sh 'which pip || true'
+        sh 'pip --version || true'
+        sh 'which pytest || true'
+        sh 'pytest --version || true'
+        sh 'which npm || true'
+        sh 'npm --version || true'
+        sh 'which node || true'
+        sh 'node --version || true'
+    }
+}
+
+
+        stage('Setup Environment') {
+    steps {
+        sh """
+        echo "Installing Python, pip, virtualenv and NodeJS..."
+        apt-get update
+        apt-get install -y python3 python3-venv python3-pip python3-dev build-essential curl
+        python3 -m venv .venv
+        . .venv/bin/activate && pip install --upgrade pip && pip install pytest flake8
+
+        curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+        apt-get install -y nodejs
+        node --version
+        npm --version
+        """
+    }
+}
+
+        stage('Unit Tests for All Services') {
+            steps {
+                script {
+                    def failed = false
+                    def results = []
+
+                    // Backend tests
+                    try {
+                        dir('backend') {
+                            sh '. ../.venv/bin/activate && pip install -r requirements.txt && pytest'
+                        }
+                        results << "Backend tests passed"
+                    } catch (err) {
+                        results << "Backend tests FAILED: ${err.getMessage()}"
+                        failed = true
+                    }
+
+                    // Auth Service tests
+                    try {
+                        dir('auth-service') {
+                            sh '. ../.venv/bin/activate && pip install -r requirements.txt && pytest'
+                        }
+                        results << "Auth Service tests passed"
+                    } catch (err) {
+                        results << "Auth Service tests FAILED: ${err.getMessage()}"
+                        failed = true
+                    }
+
+                    // Frontend tests
+                    try {
+                        dir('jewelry-store') {
+                            sh 'npm ci && npm test -- --watchAll=false'
+                        }
+                        results << "Frontend tests passed"
+                    } catch (err) {
+                        results << "Frontend tests FAILED: ${err.getMessage()}"
+                        failed = true
+                    }
+
+                    echo "=== Unit Test Summary ==="
+                    results.each { echo it }
+
+                    if (failed) {
+                        error("One or more unit tests failed. See summary above.")
+                    } else {
+                        echo "All unit tests passed for all services"
+                    }
                 }
             }
         }
@@ -35,7 +117,6 @@ pipeline {
                     def authVersion     = getversion('auth-service/VERSION.txt')
                     def frontendVersion = getversion('jewelry-store/VERSION.txt')
 
-                    // Build tags with project name included
                     env.BACKEND_TAG  = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/backend:${backendVersion}.${env.BUILD_NUMBER}"
                     env.AUTH_TAG     = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/auth-service:${authVersion}.${env.BUILD_NUMBER}"
                     env.FRONTEND_TAG = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/jewelry-store:${frontendVersion}.${env.BUILD_NUMBER}"
@@ -66,19 +147,17 @@ pipeline {
 
         stage('Build & Push Images') {
             steps {
-                script {
-                    sh """
-                    docker build -t ${env.BACKEND_TAG} ./backend
-                    docker push ${env.BACKEND_TAG}
+                sh """
+                docker build -t ${env.BACKEND_TAG} ./backend
+                docker push ${env.BACKEND_TAG}
 
-                    docker build -t ${env.AUTH_TAG} ./auth-service
-                    docker push ${env.AUTH_TAG}
+                docker build -t ${env.AUTH_TAG} ./auth-service
+                docker push ${env.AUTH_TAG}
 
-                    docker build -t ${env.FRONTEND_TAG} ./jewelry-store
-                    docker push ${env.FRONTEND_TAG}
-                    """
-                }
+                docker build -t ${env.FRONTEND_TAG} ./jewelry-store
+                docker push ${env.FRONTEND_TAG}
+                """
             }
         }
-    }
-}
+    } // <-- סוגר של stages
+} // <-- סוגר של pipeline
