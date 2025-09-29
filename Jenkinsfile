@@ -59,13 +59,14 @@ pipeline {
         stage('Get Versions') {
             steps {
                 script {
-                    def backendVersion  = getversion('backend/VERSION.txt')
-                    def authVersion     = getversion('auth-service/VERSION.txt')
-                    def frontendVersion = getversion('jewelry-store/VERSION.txt')
+                    // שומרים את הגרסאות ב-env כדי שיהיו זמינות לכל השלבים
+                    env.BACKEND_VERSION  = getversion('backend/VERSION.txt')
+                    env.AUTH_VERSION     = getversion('auth-service/VERSION.txt')
+                    env.FRONTEND_VERSION = getversion('jewelry-store/VERSION.txt')
 
-                    env.BACKEND_TAG  = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/backend:${backendVersion}.${env.BUILD_NUMBER}"
-                    env.AUTH_TAG     = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/auth-service:${authVersion}.${env.BUILD_NUMBER}"
-                    env.FRONTEND_TAG = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/jewelry-store:${frontendVersion}.${env.BUILD_NUMBER}"
+                    env.BACKEND_TAG  = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/backend:${env.BACKEND_VERSION}.${env.BUILD_NUMBER}"
+                    env.AUTH_TAG     = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/auth-service:${env.AUTH_VERSION}.${env.BUILD_NUMBER}"
+                    env.FRONTEND_TAG = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/jewelry-store:${env.FRONTEND_VERSION}.${env.BUILD_NUMBER}"
 
                     echo "Backend tag:  ${env.BACKEND_TAG}"
                     echo "Auth tag:     ${env.AUTH_TAG}"
@@ -109,10 +110,11 @@ pipeline {
         stage('Snyk Container Scan') {
             steps {
                 script {
+                    // סורקים את האימג'ים המקומיים שבנינו (כולל prefix של localhost:8082)
                     snykScan(services: [
-                        "${backendVersion}.${env.BUILD_NUMBER}",
-                        "${authVersion}.${env.BUILD_NUMBER}",
-                        "${frontendVersion}.${env.BUILD_NUMBER}"
+                        "${env.BACKEND_TAG}",
+                        "${env.AUTH_TAG}",
+                        "${env.FRONTEND_TAG}"
                     ])
                 }
             }
