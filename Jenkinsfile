@@ -25,6 +25,23 @@ pipeline {
             }
         }
 
+        stage('Verify Snyk CLI') {
+    steps {
+        script {
+            echo "Checking if snyk CLI is installed..."
+            sh '''
+            if command -v snyk >/dev/null 2>&1; then
+              echo "Snyk CLI found: $(snyk --version)"
+            else
+              echo "Snyk CLI not found in PATH"
+              echo "Make sure it is installed in the Docker image or install it with: npm install -g snyk"
+              exit 1
+            fi
+            '''
+        }
+    }
+}
+
         stage('Unit Tests - Frontend Only') {
             steps {
                 script {
@@ -106,6 +123,7 @@ pipeline {
                 """
             }
         }
+        
 
         stage('Snyk Container Scan') {
             steps {
