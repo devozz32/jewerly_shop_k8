@@ -161,7 +161,7 @@ pipeline {
                             imagenamebackend=${env.BACKEND_TAG} \
                             imagenameauth=${env.AUTH_TAG} \
                             JWT_SECRET_KEY=${JWT_SECRET_KEY} \
-                            docker compose -f docker-compose.yml up -d --force-recreate --remove-orphans
+                            docker-compose -f docker-compose.yml up -d --force-recreate
                             """
                         }
                     }
