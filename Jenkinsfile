@@ -155,26 +155,11 @@ pipeline {
                         docker compose -f docker-compose.yml up -d
                         """
                     }
-                    else {
-                        withCredentials([usernamePassword(
-                            credentialsId: 'nexus-cred',
-                            usernameVariable: 'NEXUS_USER',
-                            passwordVariable: 'NEXUS_PASS'
-                        )]) {
-                            sh """
-                            BACKEND_LAST=\$(curl -s -u ${NEXUS_USER}:${NEXUS_PASS} http://${env.REGISTRY_URL}/v2/${env.PROJECT_NAME}/backend/tags/list | jq -r '.tags | sort | .[-1]')
-                            AUTH_LAST=\$(curl -s -u ${NEXUS_USER}:${NEXUS_PASS} http://${env.REGISTRY_URL}/v2/${env.PROJECT_NAME}/auth-service/tags/list | jq -r '.tags | sort | .[-1]')
-                            FRONTEND_LAST=\$(curl -s -u ${NEXUS_USER}:${NEXUS_PASS} http://${env.REGISTRY_URL}/v2/${env.PROJECT_NAME}/jewelry-store/tags/list | jq -r '.tags | sort | .[-1]')
-
-                            echo "===================================="
-                            echo " Latest Versions from Nexus"
-                            echo " Backend  : \$BACKEND_LAST"
-                            echo " Auth     : \$AUTH_LAST"
-                            echo " Frontend : \$FRONTEND_LAST"
-                            echo "===================================="
-                            """
-                        }
-                        echo "Deploying for ${env.BRANCH_NAME.toUpperCase()} (echo only, no real deploy executed)"
+                    else if (env.BRANCH_NAME == 'stage') {
+                        echo "Deploy to STAGE (echo only, no real deploy executed)"
+                    }
+                    else if (env.BRANCH_NAME == 'main') {
+                        echo "Deploy to PROD (echo only, no real deploy executed)"
                     }
                 }
             }
