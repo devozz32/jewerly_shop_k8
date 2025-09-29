@@ -24,39 +24,37 @@ pipeline {
                 }
             }
         }
-stage('Unit Tests - Frontend Only') {
-    steps {
-        script {
-            def failed = false
-            def results = []
 
-            // Frontend tests only
-            try {
-                dir('jewelry-store') {
-                    sh '''
-                    npm ci
-                    npm test -- --watchAll=false
-                    '''
+        stage('Unit Tests - Frontend Only') {
+            steps {
+                script {
+                    def failed = false
+                    def results = []
+
+                    try {
+                        dir('jewelry-store') {
+                            sh '''
+                            npm ci
+                            npm test -- --watchAll=false
+                            '''
+                        }
+                        results << "Frontend tests passed"
+                    } catch (err) {
+                        results << "Frontend tests FAILED: ${err.getMessage()}"
+                        failed = true
+                    }
+
+                    echo "=== Unit Test Summary ==="
+                    results.each { echo it }
+
+                    if (failed) {
+                        error("Frontend tests failed. See summary above.")
+                    } else {
+                        echo "All frontend tests passed"
+                    }
                 }
-                results << "Frontend tests passed"
-            } catch (err) {
-                results << "Frontend tests FAILED: ${err.getMessage()}"
-                failed = true
-            }
-
-            echo "=== Unit Test Summary ==="
-            results.each { echo it }
-
-            if (failed) {
-                error("Frontend tests failed. See summary above.")
-            } else {
-                echo "All frontend tests passed"
             }
         }
-    }
-}
-
-
 
         stage('Get Versions') {
             steps {
@@ -93,16 +91,43 @@ stage('Unit Tests - Frontend Only') {
             }
         }
 
-        stage('Build & Push Images') {
+        stage('Build Images') {
             steps {
                 sh """
+                echo "Building backend image"
                 docker build -t ${env.BACKEND_TAG} ./backend
+
+                echo "Building auth-service image"
+                docker build -t ${env.AUTH_TAG} ./auth-service
+
+                echo "Building frontend image"
+                docker build -t ${env.FRONTEND_TAG} ./jewelry-store
+                """
+            }
+        }
+
+        stage('Snyk Container Scan') {
+            steps {
+                script {
+                    snykScan(services: [
+                        "${env.BACKEND_TAG}",
+                        "${env.AUTH_TAG}",
+                        "${env.FRONTEND_TAG}"
+                    ])
+                }
+            }
+        }
+
+        stage('Push Images') {
+            steps {
+                sh """
+                echo "Pushing backend image"
                 docker push ${env.BACKEND_TAG}
 
-                docker build -t ${env.AUTH_TAG} ./auth-service
+                echo "Pushing auth-service image"
                 docker push ${env.AUTH_TAG}
 
-                docker build -t ${env.FRONTEND_TAG} ./jewelry-store
+                echo "Pushing frontend image"
                 docker push ${env.FRONTEND_TAG}
                 """
             }
