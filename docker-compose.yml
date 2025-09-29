@@ -1,5 +1,4 @@
 @Library('jenkins-share-lib') _
-
 pipeline {
     agent { label 'docker_agent' }
 
@@ -26,7 +25,7 @@ pipeline {
         }
 
         stage('Verify Snyk CLI') {
-            when { branch 'dev' }   // Run only on dev
+            when { branch 'dev' }
             steps {
                 script {
                     echo "Checking if snyk CLI is installed..."
@@ -44,12 +43,11 @@ pipeline {
         }
 
         stage('Unit Tests - Frontend Only') {
-            when { branch 'dev' }   // Run only on dev
+            when { branch 'dev' }
             steps {
                 script {
                     def failed = false
                     def results = []
-
                     try {
                         dir('jewelry-store') {
                             sh '''
@@ -62,10 +60,8 @@ pipeline {
                         results << "Frontend tests FAILED: ${err.getMessage()}"
                         failed = true
                     }
-
                     echo "=== Unit Test Summary ==="
                     results.each { echo it }
-
                     if (failed) {
                         error("Frontend tests failed. See summary above.")
                     } else {
@@ -76,25 +72,26 @@ pipeline {
         }
 
         stage('Get Versions') {
+            when { branch 'dev' }
             steps {
                 script {
-                    env.BACKEND_VERSION  = getversion('backend/VERSION.txt')
-                    env.AUTH_VERSION     = getversion('auth-service/VERSION.txt')
+                    env.BACKEND_VERSION = getversion('backend/VERSION.txt')
+                    env.AUTH_VERSION    = getversion('auth-service/VERSION.txt')
                     env.FRONTEND_VERSION = getversion('jewelry-store/VERSION.txt')
 
                     env.BACKEND_TAG  = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/backend:${env.BACKEND_VERSION}.${env.BUILD_NUMBER}"
                     env.AUTH_TAG     = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/auth-service:${env.AUTH_VERSION}.${env.BUILD_NUMBER}"
                     env.FRONTEND_TAG = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/jewelry-store:${env.FRONTEND_VERSION}.${env.BUILD_NUMBER}"
 
-                    echo "Backend tag:  ${env.BACKEND_TAG}"
-                    echo "Auth tag:     ${env.AUTH_TAG}"
+                    echo "Backend tag: ${env.BACKEND_TAG}"
+                    echo "Auth tag: ${env.AUTH_TAG}"
                     echo "Frontend tag: ${env.FRONTEND_TAG}"
                 }
             }
         }
 
         stage('Docker Login') {
-            when { branch 'dev' }   // Run only on dev
+            when { branch 'dev' }
             steps {
                 script {
                     withCredentials([usernamePassword(
@@ -112,7 +109,7 @@ pipeline {
         }
 
         stage('Build Images') {
-            when { branch 'dev' }   // Run only on dev
+            when { branch 'dev' }
             steps {
                 sh """
                 docker build -t ${env.BACKEND_TAG} ./backend
@@ -123,7 +120,7 @@ pipeline {
         }
 
         stage('Snyk Container Scan') {
-            when { branch 'dev' }   // Run only on dev
+            when { branch 'dev' }
             steps {
                 script {
                     snykScan(services: [
@@ -136,7 +133,7 @@ pipeline {
         }
 
         stage('Push Images') {
-            when { branch 'dev' }   // Run only on dev
+            when { branch 'dev' }
             steps {
                 sh """
                 docker push ${env.BACKEND_TAG}
@@ -157,21 +154,28 @@ pipeline {
                         imagenameauth=${env.AUTH_TAG} \
                         docker compose -f docker-compose.yml up -d
                         """
-                    } else if (env.BRANCH_NAME == 'stage') {
-                        echo "STAGE environment detected - only showing available versions"
-                        echo "Backend:  ${env.BACKEND_TAG}"
-                        echo "Auth:     ${env.AUTH_TAG}"
-                        echo "Frontend: ${env.FRONTEND_TAG}"
-                    } else if (env.BRANCH_NAME == 'main') {
-                        echo "MAIN (Production) branch detected - asking before deploy"
-                        def confirm = input(
-                            message: "Do you want to deploy these images to PROD?",
-                            ok: "Deploy"
-                        )
-                        if (confirm) {
-                            echo "Would deploy: ${env.BACKEND_TAG}, ${env.AUTH_TAG}, ${env.FRONTEND_TAG}"
-                            // כאן אפשר לשים docker compose prod אמיתי אם תרצה
+                    }
+                    else {
+                        withCredentials([usernamePassword(
+                            credentialsId: 'nexus-cred',
+                            usernameVariable: 'NEXUS_USER',
+                            passwordVariable: 'NEXUS_PASS'
+                        )]) {
+                            sh """
+                            echo "Latest Backend version:"
+                            curl -s -u ${NEXUS_USER}:${NEXUS_PASS} http://${env.REGISTRY_URL}/v2/${env.PROJECT_NAME}/backend/tags/list \
+                              | jq -r '.tags | sort | last'
+
+                            echo "Latest Auth version:"
+                            curl -s -u ${NEXUS_USER}:${NEXUS_PASS} http://${env.REGISTRY_URL}/v2/${env.PROJECT_NAME}/auth-service/tags/list \
+                              | jq -r '.tags | sort | last'
+
+                            echo "Latest Frontend version:"
+                            curl -s -u ${NEXUS_USER}:${NEXUS_PASS} http://${env.REGISTRY_URL}/v2/${env.PROJECT_NAME}/jewelry-store/tags/list \
+                              | jq -r '.tags | sort | last'
+                            """
                         }
+                        echo "Deploying for ${env.BRANCH_NAME.toUpperCase()} (echo only, no real deploy executed)"
                     }
                 }
             }
