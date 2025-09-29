@@ -31,11 +31,11 @@ pipeline {
                     echo "Checking if snyk CLI is installed..."
                     sh '''
                     if command -v snyk >/dev/null 2>&1; then
-                      echo "Snyk CLI found: $(snyk --version)"
+                        echo "Snyk CLI found: $(snyk --version)"
                     else
-                      echo "Snyk CLI not found in PATH"
-                      echo "Make sure it is installed in the Docker image or install it with: npm install -g snyk"
-                      exit 1
+                        echo "Snyk CLI not found in PATH"
+                        echo "Make sure it is installed in the Docker image or install it with: npm install -g snyk"
+                        exit 1
                     fi
                     '''
                 }
@@ -76,7 +76,7 @@ pipeline {
             steps {
                 script {
                     env.BACKEND_VERSION = getversion('backend/VERSION.txt')
-                    env.AUTH_VERSION    = getversion('auth-service/VERSION.txt')
+                    env.AUTH_VERSION = getversion('auth-service/VERSION.txt')
                     env.FRONTEND_VERSION = getversion('jewelry-store/VERSION.txt')
 
                     env.BACKEND_TAG  = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/backend:${env.BACKEND_VERSION}.${env.BUILD_NUMBER}"
@@ -147,28 +147,21 @@ pipeline {
             steps {
                 script {
                     if (env.BRANCH_NAME == 'dev') {
-                        echo "Recreating DEV environment with docker-compose..."
+                        echo "Deploying DEV environment with docker compose..."
                         withCredentials([string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')]) {
                             sh """
                             echo "Using JWT_SECRET_KEY from Jenkins Credentials"
-                            imagenamefrontend=${env.FRONTEND_TAG} \
-                            imagenamebackend=${env.BACKEND_TAG} \
-                            imagenameauth=${env.AUTH_TAG} \
-                            JWT_SECRET_KEY=${JWT_SECRET_KEY} \
-                            docker compose -f docker-compose.yml down || true
+                            export imagenamefrontend=${env.FRONTEND_TAG}
+                            export imagenamebackend=${env.BACKEND_TAG}
+                            export imagenameauth=${env.AUTH_TAG}
+                            export JWT_SECRET_KEY=${JWT_SECRET_KEY}
 
-                            imagenamefrontend=${env.FRONTEND_TAG} \
-                            imagenamebackend=${env.BACKEND_TAG} \
-                            imagenameauth=${env.AUTH_TAG} \
-                            JWT_SECRET_KEY=${JWT_SECRET_KEY} \
-                            docker-compose -f docker-compose.yml up -d --force-recreate
+                            docker compose -f docker-compose.yml up -d --force-recreate --remove-orphans
                             """
                         }
-                    }
-                    else if (env.BRANCH_NAME == 'stage') {
+                    } else if (env.BRANCH_NAME == 'stage') {
                         echo "Deploy to STAGE (echo only, no real deploy executed)"
-                    }
-                    else if (env.BRANCH_NAME == 'main') {
+                    } else if (env.BRANCH_NAME == 'main') {
                         echo "Deploy to PROD (echo only, no real deploy executed)"
                     }
                 }
