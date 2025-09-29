@@ -156,7 +156,7 @@ pipeline {
                             export imagenameauth=${env.AUTH_TAG}
                             export JWT_SECRET_KEY=${JWT_SECRET_KEY}
 
-                            docker compose -f docker-compose.yml up -d --force-recreate --remove-orphans
+                            docker-compose -f docker-compose.yml up -d --force-recreate
                             """
                         }
                     } else if (env.BRANCH_NAME == 'stage') {
