@@ -147,13 +147,23 @@ pipeline {
             steps {
                 script {
                     if (env.BRANCH_NAME == 'dev') {
-                        echo "Deploying DEV environment with docker-compose..."
-                        sh """
-                        imagenamefrontend=${env.FRONTEND_TAG} \
-                        imagenamebackend=${env.BACKEND_TAG} \
-                        imagenameauth=${env.AUTH_TAG} \
-                        docker compose -f docker-compose.yml up -d
-                        """
+                        echo "Recreating DEV environment with docker-compose..."
+                        withCredentials([string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET_KEY')]) {
+                            sh """
+                            echo "Using JWT_SECRET_KEY from Jenkins Credentials"
+                            imagenamefrontend=${env.FRONTEND_TAG} \
+                            imagenamebackend=${env.BACKEND_TAG} \
+                            imagenameauth=${env.AUTH_TAG} \
+                            JWT_SECRET_KEY=${JWT_SECRET_KEY} \
+                            docker compose -f docker-compose.yml down || true
+
+                            imagenamefrontend=${env.FRONTEND_TAG} \
+                            imagenamebackend=${env.BACKEND_TAG} \
+                            imagenameauth=${env.AUTH_TAG} \
+                            JWT_SECRET_KEY=${JWT_SECRET_KEY} \
+                            docker compose -f docker-compose.yml up -d --force-recreate --remove-orphans
+                            """
+                        }
                     }
                     else if (env.BRANCH_NAME == 'stage') {
                         echo "Deploy to STAGE (echo only, no real deploy executed)"
