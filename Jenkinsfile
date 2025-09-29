@@ -110,9 +110,9 @@ pipeline {
             steps {
                 script {
                     snykScan(services: [
-                        "${env.BACKEND_TAG}",
-                        "${env.AUTH_TAG}",
-                        "${env.FRONTEND_TAG}"
+                        "${backendVersion}.${env.BUILD_NUMBER}",
+                        "${authVersion}.${env.BUILD_NUMBER}",
+                        "${frontendVersion}.${env.BUILD_NUMBER}"
                     ])
                 }
             }
