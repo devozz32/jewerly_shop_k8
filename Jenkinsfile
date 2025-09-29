@@ -148,7 +148,7 @@ pipeline {
                 script {
                     if (env.BRANCH_NAME == 'dev') {
                         echo "Recreating DEV environment with docker-compose..."
-                        withCredentials([string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET_KEY')]) {
+                        withCredentials([string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')]) {
                             sh """
                             echo "Using JWT_SECRET_KEY from Jenkins Credentials"
                             imagenamefrontend=${env.FRONTEND_TAG} \
