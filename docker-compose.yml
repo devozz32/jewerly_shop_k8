@@ -4,8 +4,8 @@ services:
     build:
       context: ./jewelry-store
       dockerfile: Dockerfile
-    image: $
-    container_name: ${imagenamefrontend}
+    image: ${imagenamefrontend}
+    container_name: jewelry-store
     ports:
       - "3000:80"   # Host:Container (Host 3000 → Container 80 for Nginx)
     depends_on:
@@ -39,6 +39,7 @@ services:
     ports:
       - "8001:8001"
     environment:
-      - WT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
 
  
+  
