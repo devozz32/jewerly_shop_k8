@@ -58,9 +58,9 @@ pipeline {
         }
 
         stage('Get Versions') {
+            when { expression { env.BRANCH_NAME.endsWith("dev") } }
             steps {
                 script {
-                    // שומרים את הגרסאות ב-env כדי שיהיו זמינות לכל השלבים
                     env.BACKEND_VERSION  = getversion('backend/VERSION.txt')
                     env.AUTH_VERSION     = getversion('auth-service/VERSION.txt')
                     env.FRONTEND_VERSION = getversion('jewelry-store/VERSION.txt')
@@ -69,8 +69,8 @@ pipeline {
                     env.AUTH_TAG     = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/auth-service:${env.AUTH_VERSION}.${env.BUILD_NUMBER}"
                     env.FRONTEND_TAG = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/jewelry-store:${env.FRONTEND_VERSION}.${env.BUILD_NUMBER}"
 
-                    echo "Backend tag:  ${env.BACKEND_TAG}"
-                    echo "Auth tag:     ${env.AUTH_TAG}"
+                    echo "Backend tag : ${env.BACKEND_TAG}"
+                    echo "Auth tag    : ${env.AUTH_TAG}"
                     echo "Frontend tag: ${env.FRONTEND_TAG}"
                 }
             }
