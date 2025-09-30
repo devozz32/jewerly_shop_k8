@@ -127,27 +127,20 @@ pipeline {
         stage('Deploy DEV') {
             when { expression { env.BRANCH_NAME.endsWith("dev") } }
             steps {
-                script {
-                    def composeCmd = "docker-compose"
-                    if (sh(script: "command -v docker compose >/dev/null 2>&1", returnStatus: true) == 0) {
-                        composeCmd = "docker compose"
-                    }
+                withCredentials([string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')]) {
+                    sh """
+                    export imagenamefrontend=${env.FRONTEND_TAG}
+                    export imagenamebackend=${env.BACKEND_TAG}
+                    export imagenameauth=${env.AUTH_TAG}
+                    export JWT_SECRET_KEY=\$JWT_SECRET_KEY
 
-                    withCredentials([string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')]) {
-                        sh """
-                        export imagenamefrontend=${env.FRONTEND_TAG}
-                        export imagenamebackend=${env.BACKEND_TAG}
-                        export imagenameauth=${env.AUTH_TAG}
-                        export JWT_SECRET_KEY=\$JWT_SECRET_KEY
+                    echo "=== DEBUG: Printing image names before compose ==="
+                    echo "imagenamefrontend=\$imagenamefrontend"
+                    echo "imagenamebackend=\$imagenamebackend"
+                    echo "imagenameauth=\$imagenameauth"
 
-                        echo "=== DEBUG: Printing image names before compose ==="
-                        echo "imagenamefrontend=\$imagenamefrontend"
-                        echo "imagenamebackend=\$imagenamebackend"
-                        echo "imagenameauth=\$imagenameauth"
-
-                        ${composeCmd} -f docker-compose.yml up -d --force-recreate --remove-orphans
-                        """
-                    }
+                    docker-compose -f docker-compose.yml up -d --force-recreate --remove-orphans
+                    """
                 }
             }
         }
