@@ -7,7 +7,14 @@ pipeline {
     }
 
     stages {
+        stage('Debug Branch') {
+            steps {
+                echo "DEBUG: BRANCH_NAME = '${env.BRANCH_NAME}'"
+            }
+        }
+
         stage('Clean Workspace') {
+            when { expression { env.BRANCH_NAME.endsWith("dev") } }
             steps {
                 script { cleanworkspace() }
             }
@@ -25,53 +32,33 @@ pipeline {
         }
 
         stage('Verify Snyk CLI') {
-            when { branch 'dev' }
+            when { expression { env.BRANCH_NAME.endsWith("dev") } }
             steps {
-                script {
-                    echo "Checking if snyk CLI is installed..."
+                sh '''
+                if command -v snyk >/dev/null 2>&1; then
+                  echo "✅ Snyk CLI found: $(snyk --version)"
+                else
+                  echo "❌ Snyk CLI not found"
+                  exit 1
+                fi
+                '''
+            }
+        }
+
+        stage('Unit Tests - Frontend Only') {
+            when { expression { env.BRANCH_NAME.endsWith("dev") } }
+            steps {
+                dir('jewelry-store') {
                     sh '''
-                    if command -v snyk >/dev/null 2>&1; then
-                      echo "✅ Snyk CLI found: $(snyk --version)"
-                    else
-                      echo "❌ Snyk CLI not found in PATH"
-                      exit 1
-                    fi
+                    npm ci
+                    npm test -- --watchAll=false
                     '''
                 }
             }
         }
 
-        stage('Unit Tests - Frontend Only') {
-            when { branch 'dev' }
-            steps {
-                script {
-                    def failed = false
-                    def results = []
-                    try {
-                        dir('jewelry-store') {
-                            sh '''
-                            npm ci
-                            npm test -- --watchAll=false
-                            '''
-                        }
-                        results << "Frontend tests passed"
-                    } catch (err) {
-                        results << "Frontend tests FAILED: ${err.getMessage()}"
-                        failed = true
-                    }
-                    echo "=== Unit Test Summary ==="
-                    results.each { echo it }
-                    if (failed) {
-                        error("Frontend tests failed. See summary above.")
-                    } else {
-                        echo "All frontend tests passed"
-                    }
-                }
-            }
-        }
-
         stage('Get Versions') {
-            when { branch 'dev' }
+            when { expression { env.BRANCH_NAME.endsWith("dev") } }
             steps {
                 script {
                     env.BACKEND_VERSION  = getversion('backend/VERSION.txt')
@@ -90,25 +77,20 @@ pipeline {
         }
 
         stage('Docker Login') {
-            when { branch 'dev' }
+            when { expression { env.BRANCH_NAME.endsWith("dev") } }
             steps {
-                script {
-                    withCredentials([usernamePassword(
-                        credentialsId: 'nexus-cred',
-                        usernameVariable: 'NEXUS_USER',
-                        passwordVariable: 'NEXUS_PASS'
-                    )]) {
-                        sh """
-                        echo "🔐 Logging in to Docker registry: ${env.REGISTRY_URL}"
-                        docker login ${env.REGISTRY_URL} -u ${NEXUS_USER} -p ${NEXUS_PASS}
-                        """
-                    }
+                withCredentials([usernamePassword(
+                    credentialsId: 'nexus-cred',
+                    usernameVariable: 'NEXUS_USER',
+                    passwordVariable: 'NEXUS_PASS'
+                )]) {
+                    sh "docker login ${env.REGISTRY_URL} -u ${NEXUS_USER} -p ${NEXUS_PASS}"
                 }
             }
         }
 
         stage('Build Images') {
-            when { branch 'dev' }
+            when { expression { env.BRANCH_NAME.endsWith("dev") } }
             steps {
                 sh """
                 docker build -t ${env.BACKEND_TAG} ./backend
@@ -119,7 +101,7 @@ pipeline {
         }
 
         stage('Snyk Container Scan') {
-            when { branch 'dev' }
+            when { expression { env.BRANCH_NAME.endsWith("dev") } }
             steps {
                 script {
                     snykScan(services: [
@@ -132,7 +114,7 @@ pipeline {
         }
 
         stage('Push Images') {
-            when { branch 'dev' }
+            when { expression { env.BRANCH_NAME.endsWith("dev") } }
             steps {
                 sh """
                 docker push ${env.BACKEND_TAG}
@@ -142,35 +124,46 @@ pipeline {
             }
         }
 
-        stage('Deploy') {
+        stage('Deploy DEV') {
+            when { expression { env.BRANCH_NAME.endsWith("dev") } }
             steps {
                 script {
-                    if (env.BRANCH_NAME == 'dev') {
-                        echo "🚀 Recreating DEV environment with docker compose..."
-
-                        // לבחור אם יש docker compose V2 או V1
-                        def composeCmd = "docker-compose"
-                        if (sh(script: "command -v docker compose >/dev/null 2>&1", returnStatus: true) == 0) {
-                            composeCmd = "docker compose"
-                        }
-
-                        withCredentials([string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')]) {
-                            sh """
-                            export imagenamefrontend=${env.FRONTEND_TAG}
-                            export imagenamebackend=${env.BACKEND_TAG}
-                            export imagenameauth=${env.AUTH_TAG}
-                            export JWT_SECRET_KEY=\$JWT_SECRET_KEY
-
-                            echo "=== DEBUG: Printing image names before compose ==="
-                            echo "imagenamefrontend=\$imagenamefrontend"
-                            echo "imagenamebackend=\$imagenamebackend"
-                            echo "imagenameauth=\$imagenameauth"
-
-                            ${composeCmd} -f docker-compose.yml up -d --force-recreate --remove-orphans
-                            """
-                        }
+                    def composeCmd = "docker-compose"
+                    if (sh(script: "command -v docker compose >/dev/null 2>&1", returnStatus: true) == 0) {
+                        composeCmd = "docker compose"
                     }
-                    else if (env.BRANCH_NAME == 'stage') {
-                        echo "🟡 Deploy to STAGE (echo only, no real deploy executed)"
+
+                    withCredentials([string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')]) {
+                        sh """
+                        export imagenamefrontend=${env.FRONTEND_TAG}
+                        export imagenamebackend=${env.BACKEND_TAG}
+                        export imagenameauth=${env.AUTH_TAG}
+                        export JWT_SECRET_KEY=\$JWT_SECRET_KEY
+
+                        echo "=== DEBUG: Printing image names before compose ==="
+                        echo "imagenamefrontend=\$imagenamefrontend"
+                        echo "imagenamebackend=\$imagenamebackend"
+                        echo "imagenameauth=\$imagenameauth"
+
+                        ${composeCmd} -f docker-compose.yml up -d --force-recreate --remove-orphans
+                        """
                     }
-                    else if (en
+                }
+            }
+        }
+
+        stage('Deploy STAGE') {
+            when { expression { env.BRANCH_NAME.endsWith("stage") } }
+            steps {
+                echo "🟡 Deploy to STAGE (echo only, no real deploy executed)"
+            }
+        }
+
+        stage('Deploy PROD') {
+            when { expression { env.BRANCH_NAME.endsWith("main") } }
+            steps {
+                echo "🟢 Deploy to PROD (echo only, no real deploy executed)"
+            }
+        }
+    }
+}
