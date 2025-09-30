@@ -24,6 +24,7 @@
                         echo "Deploy to STAGE (echo only, no real deploy executed)"
                     } else if (env.BRANCH_NAME == 'main') {
                         echo "Deploy to PROD (echo only, no real deploy executed)"
+                        echo "Deploy to PROD (echo only, no real deploy executed)"
                     }
                 }
             }
