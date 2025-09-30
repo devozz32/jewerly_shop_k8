@@ -39,6 +39,7 @@ services:
     ports:
       - "8001:8001"
     environment:
-      - WT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
 
  
+  
