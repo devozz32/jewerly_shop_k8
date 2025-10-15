@@ -101,19 +101,12 @@ pipeline {
                     helm version
                     '''
 
-                    // 🧩 שימוש ב-kubeconfig מה-Credentials
-                    withCredentials([
-                        string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY'),
-                        file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')
-                    ]) {
+                    // 🧩 Deploy using in-cluster ServiceAccount credentials
+                    withCredentials([string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')]) {
                         env.HELM_DIR = "infra-k8s/jewelry-store"
                         env.VALUES_FILE = "${env.HELM_DIR}/values.yaml"
 
                         sh """
-                        echo "📁 Using kubeconfig from Jenkins..."
-                        export KUBECONFIG=\$KUBECONFIG_FILE
-                        kubectl config current-context || true
-
                         echo "📝 Updating ${env.VALUES_FILE} with new image tags..."
 
                         sed -i 's|image:.*store-backend.*|image: ${env.BACKEND_TAG}|' ${env.VALUES_FILE}
@@ -123,7 +116,7 @@ pipeline {
                         echo "✅ values.yaml updated successfully:"
                         grep 'image:' ${env.VALUES_FILE}
 
-                        echo "🚀 Deploying with Helm..."
+                        echo "🚀 Deploying with Helm using ServiceAccount credentials..."
                         export JWT_SECRET_KEY=\$JWT_SECRET_KEY
                         helm upgrade --install jewelry-store ${env.HELM_DIR} -f ${env.VALUES_FILE} -n ${namespace}
 
