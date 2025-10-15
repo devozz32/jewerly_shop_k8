@@ -1,9 +1,10 @@
 @Library('jenkins-share-lib') _
 pipeline {
-    agent { label 'docker_agent' }
+    agent { label 'jenkins-agent-pod' }
 
     environment {
-        REGISTRY_URL = "localhost:8082"
+        REGISTRY_URL = "docker.io"  // Docker Hub base registry
+        DOCKERHUB_USER = "talko32"
         INFRA_REPO   = "https://github.com/devozz32/infra-k8s.git"
         PROJECT_NAME = ""
     }
@@ -28,9 +29,10 @@ pipeline {
                     env.AUTH_VERSION     = getversion('auth-service/VERSION.txt')
                     env.FRONTEND_VERSION = getversion('jewelry-store/VERSION.txt')
 
-                    env.BACKEND_TAG  = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/backend:${env.BACKEND_VERSION}.${env.BUILD_NUMBER}"
-                    env.AUTH_TAG     = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/auth-service:${env.AUTH_VERSION}.${env.BUILD_NUMBER}"
-                    env.FRONTEND_TAG = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/jewelry-store:${env.FRONTEND_VERSION}.${env.BUILD_NUMBER}"
+                    // Docker Hub tags (user/repo:version)
+                    env.BACKEND_TAG  = "${env.DOCKERHUB_USER}/store-backend:${env.BACKEND_VERSION}.${env.BUILD_NUMBER}"
+                    env.AUTH_TAG     = "${env.DOCKERHUB_USER}/store-auth:${env.AUTH_VERSION}.${env.BUILD_NUMBER}"
+                    env.FRONTEND_TAG = "${env.DOCKERHUB_USER}/store-frontend:${env.FRONTEND_VERSION}.${env.BUILD_NUMBER}"
                 }
                 echo """
                 Backend tag : ${env.BACKEND_TAG}
@@ -44,18 +46,25 @@ pipeline {
             when { expression { env.BRANCH_NAME.endsWith("dev") || env.BRANCH_NAME.endsWith("stage") || env.BRANCH_NAME.endsWith("main") } }
             steps {
                 withCredentials([usernamePassword(
-                    credentialsId: 'nexus-cred',
-                    usernameVariable: 'NEXUS_USER',
-                    passwordVariable: 'NEXUS_PASS'
+                    credentialsId: 'dockerhub-creds',   // צור את זה ב-Jenkins
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
                 )]) {
                     sh """
-                    docker login ${env.REGISTRY_URL} -u ${NEXUS_USER} -p ${NEXUS_PASS}
+                    echo "🔐 Docker login..."
+                    echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+
+                    echo "🔨 Building images..."
                     docker build -t ${env.BACKEND_TAG} ./backend
                     docker build -t ${env.AUTH_TAG} ./auth-service
                     docker build -t ${env.FRONTEND_TAG} ./jewelry-store
+
+                    echo "🚀 Pushing to Docker Hub..."
                     docker push ${env.BACKEND_TAG}
                     docker push ${env.AUTH_TAG}
                     docker push ${env.FRONTEND_TAG}
+
+                    echo "✅ Push completed successfully!"
                     """
                 }
             }
@@ -76,7 +85,7 @@ pipeline {
 
                     echo "Deploying to namespace: ${namespace}"
 
-                    // משוך את ריפו התשתית
+                    // Clone infra repo
                     dir('infra-k8s') {
                         git branch: 'main', url: "${env.INFRA_REPO}"
                     }
@@ -85,14 +94,14 @@ pipeline {
                         env.HELM_DIR = "infra-k8s/jewelry-store"
                         env.VALUES_FILE = "${env.HELM_DIR}/values.yaml"
 
-                        // עדכון של תגי התמונות בקובץ values.yaml
+                        // Update values.yaml with new Docker Hub image tags
                         sh """
                         yq e -i '.backend.image="${env.BACKEND_TAG}"' ${env.VALUES_FILE}
                         yq e -i '.auth.image="${env.AUTH_TAG}"' ${env.VALUES_FILE}
                         yq e -i '.frontend.image="${env.FRONTEND_TAG}"' ${env.VALUES_FILE}
                         """
 
-                        // פריסה עם Helm
+                        // Deploy using Helm
                         sh """
                         export JWT_SECRET_KEY=\$JWT_SECRET_KEY
                         helm upgrade --install jewelry-store ${env.HELM_DIR} -f ${env.VALUES_FILE} -n ${namespace} --create-namespace
