@@ -46,7 +46,7 @@ pipeline {
             when { expression { env.BRANCH_NAME.endsWith("dev") || env.BRANCH_NAME.endsWith("stage") || env.BRANCH_NAME.endsWith("main") } }
             steps {
                 withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-creds',   // צור את זה ב-Jenkins
+                    credentialsId: 'dockerhub-creds',
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
@@ -90,11 +90,22 @@ pipeline {
                         git branch: 'main', url: "${env.INFRA_REPO}"
                     }
 
+                    // 🪄 התקנת Helm (אם לא קיים)
+                    sh '''
+                    if ! command -v helm >/dev/null 2>&1; then
+                        echo "🪄 Installing Helm..."
+                        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+                    else
+                        echo "✅ Helm already installed."
+                    fi
+                    helm version
+                    '''
+
+                    // הפעלת הפריסה עם הסוד
                     withCredentials([string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')]) {
                         env.HELM_DIR = "infra-k8s/jewelry-store"
                         env.VALUES_FILE = "${env.HELM_DIR}/values.yaml"
 
-                        // 🧩 החלפה של כל פקודות yq → sed
                         sh """
                         echo "📝 Updating ${env.VALUES_FILE} with new image tags..."
 
