@@ -1,6 +1,6 @@
 @Library('jenkins-share-lib') _
 pipeline {
-    agent { label 'docker_agent' }
+    agent { label 'jenkins-agent-pod' }
 
     environment {
         REGISTRY_URL = "localhost:8082"
