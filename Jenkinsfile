@@ -3,7 +3,7 @@ pipeline {
     agent { label 'jenkins-agent-pod' }
 
     environment {
-        REGISTRY_URL = "localhost:8082"
+        REGISTRY_URL = "host.docker.internal:8082"
         INFRA_REPO   = "https://github.com/devozz32/infra-k8s.git"
         PROJECT_NAME = ""
     }
