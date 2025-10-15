@@ -4,38 +4,40 @@ pipeline {
     agent { label 'jenkins-agent-pod' }
 
     environment {
-        // Docker Hub
+        // 🐳 Docker Hub
         REGISTRY_URL   = "docker.io"
         DOCKERHUB_USER = "talko32"
 
-        // Infra repo
+        // 🌐 Infra repo
         INFRA_REPO     = "https://github.com/devozz32/infra-k8s.git"
         INFRA_BRANCH   = "main"
-
-        // Dynamic vars
-        PROJECT_NAME   = ""
-        DEPLOY_ENV     = ""
-        K8S_NAMESPACE  = ""
     }
 
     stages {
 
         // ───────────────────────────────
-        stage('Debug Environment') {
+        stage('Determine Environment') {
             steps {
                 script {
-                    env.DEPLOY_ENV = (
-                        env.BRANCH_NAME.endsWith('dev')   ? 'dev'   :
-                        env.BRANCH_NAME.endsWith('stage') ? 'stage' :
-                        env.BRANCH_NAME.endsWith('main')  ? 'prod'  : 'none'
-                    )
+                    def branch = env.BRANCH_NAME ?: "main"
+
+                    if (branch == "main" || branch.contains("main")) {
+                        env.DEPLOY_ENV = "prod"
+                    } else if (branch == "stage" || branch.contains("stage")) {
+                        env.DEPLOY_ENV = "stage"
+                    } else if (branch == "dev" || branch.contains("dev")) {
+                        env.DEPLOY_ENV = "dev"
+                    } else {
+                        env.DEPLOY_ENV = "dev"
+                    }
+
                     env.K8S_NAMESPACE = env.DEPLOY_ENV
 
                     echo """
                     ============================================
                     🔍 Pipeline Configuration
                     ============================================
-                    Branch     : ${env.BRANCH_NAME}
+                    Branch     : ${branch}
                     Environment: ${env.DEPLOY_ENV}
                     Namespace  : ${env.K8S_NAMESPACE}
                     Build      : #${env.BUILD_NUMBER}
@@ -51,32 +53,26 @@ pipeline {
                 checkout scm
                 script {
                     env.PROJECT_NAME = getprojectnamefromgit()
-                    echo "✅ Detected PROJECT_NAME = ${env.PROJECT_NAME}"
-                    echo "Branch: ${env.BRANCH_NAME}, Commit: ${env.GIT_COMMIT}"
+                    echo "✅ PROJECT_NAME = ${env.PROJECT_NAME}"
                 }
             }
         }
 
         // ───────────────────────────────
         stage('Get Versions') {
-            when { expression { env.BRANCH_NAME =~ /(dev|stage|main)$/ } }
             steps {
                 script {
                     env.BACKEND_VERSION  = getversion('backend/VERSION.txt')
                     env.AUTH_VERSION     = getversion('auth-service/VERSION.txt')
                     env.FRONTEND_VERSION = getversion('jewelry-store/VERSION.txt')
 
-                    env.BACKEND_TAG  = "${env.DOCKERHUB_USER}/store-backend:${env.BACKEND_VERSION}.${env.BUILD_NUMBER}"
-                    env.AUTH_TAG     = "${env.DOCKERHUB_USER}/store-auth:${env.AUTH_VERSION}.${env.BUILD_NUMBER}"
-                    env.FRONTEND_TAG = "${env.DOCKERHUB_USER}/store-frontend:${env.FRONTEND_VERSION}.${env.BUILD_NUMBER}"
-
                     echo """
                     ============================================
                     📦 Version Information
                     ============================================
-                    Backend  : ${env.BACKEND_TAG}
-                    Auth     : ${env.AUTH_TAG}
-                    Frontend : ${env.FRONTEND_TAG}
+                    Backend  : ${env.BACKEND_VERSION}
+                    Auth     : ${env.AUTH_VERSION}
+                    Frontend : ${env.FRONTEND_VERSION}
                     ============================================
                     """
                 }
@@ -84,121 +80,97 @@ pipeline {
         }
 
         // ───────────────────────────────
-        stage('Build & Push Images') {
-            when { expression { env.BRANCH_NAME =~ /(dev|stage|main)$/ } }
+        stage('Build & Push Docker Images') {
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhub-creds',
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
-                    sh """
-                        echo "🔐 Docker login..."
-                        echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+                    sh '''
+                        echo "🔐 Logging in to Docker Hub..."
+                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
 
-                        echo "🔨 Building images..."
-                        docker build -t ${env.BACKEND_TAG} ./backend
-                        docker build -t ${env.AUTH_TAG} ./auth-service
-                        docker build -t ${env.FRONTEND_TAG} ./jewelry-store
+                        echo "🔨 Building Docker images..."
+                        docker build -t ${DOCKERHUB_USER}/store-backend:${BACKEND_VERSION}.${BUILD_NUMBER} ./backend
+                        docker build -t ${DOCKERHUB_USER}/store-auth:${AUTH_VERSION}.${BUILD_NUMBER} ./auth-service
+                        docker build -t ${DOCKERHUB_USER}/store-frontend:${FRONTEND_VERSION}.${BUILD_NUMBER} ./jewelry-store
 
-                        echo "📤 Pushing images..."
-                        docker push ${env.BACKEND_TAG}
-                        docker push ${env.AUTH_TAG}
-                        docker push ${env.FRONTEND_TAG}
+                        echo "📤 Pushing images to Docker Hub..."
+                        docker push ${DOCKERHUB_USER}/store-backend:${BACKEND_VERSION}.${BUILD_NUMBER}
+                        docker push ${DOCKERHUB_USER}/store-auth:${AUTH_VERSION}.${BUILD_NUMBER}
+                        docker push ${DOCKERHUB_USER}/store-frontend:${FRONTEND_VERSION}.${BUILD_NUMBER}
 
-                        echo "✅ All images pushed successfully!"
-                    """
+                        echo "✅ Images pushed successfully!"
+                    '''
                 }
             }
         }
 
         // ───────────────────────────────
         stage('Checkout Infrastructure Repo') {
-            when { expression { env.BRANCH_NAME =~ /(dev|stage|main)$/ } }
             steps {
-                script {
-                    echo "📥 Cloning infra repository..."
-                    dir('infra-k8s') {
-                        git branch: "${env.INFRA_BRANCH}", url: "${env.INFRA_REPO}"
-                    }
-                    echo "✅ Infrastructure repo cloned"
+                dir('infra-k8s') {
+                    git branch: "${env.INFRA_BRANCH}", url: "${env.INFRA_REPO}"
                 }
             }
         }
 
         // ───────────────────────────────
-        stage('Install Helm') {
-            when { expression { env.BRANCH_NAME =~ /(dev|stage|main)$/ } }
+        stage('Install Helm & kubectl') {
             steps {
                 sh '''
                     if ! command -v helm >/dev/null 2>&1; then
                         echo "🪄 Installing Helm..."
                         curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-                    else
-                        echo "✅ Helm already installed."
                     fi
                     helm version
-                '''
-            }
-        }
 
-        // ───────────────────────────────
-        stage('Install kubectl') {
-            when { expression { env.BRANCH_NAME =~ /(dev|stage|main)$/ } }
-            steps {
-                sh '''
                     if ! command -v kubectl >/dev/null 2>&1; then
                         echo "⚙️ Installing kubectl..."
                         KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
                         curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
                         install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-                        echo "✅ kubectl installed successfully!"
-                    else
-                        echo "✅ kubectl already installed."
                     fi
-                    kubectl version --client=true
+                    kubectl version --client
                 '''
             }
         }
 
         // ───────────────────────────────
         stage('Manual Approval for Production') {
-            when { expression { env.BRANCH_NAME.endsWith("main") } }
+            when { expression { env.DEPLOY_ENV == "prod" } }
             steps {
-                input message: '🚨 Deploy to PRODUCTION?', ok: 'Deploy!'
+                input message: "🚨 Deploy to PRODUCTION?", ok: "Deploy!"
             }
         }
 
         // ───────────────────────────────
         stage('Deploy via Helm') {
-            when { expression { env.BRANCH_NAME =~ /(dev|stage|main)$/ } }
             steps {
                 withCredentials([string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')]) {
                     script {
-                        env.HELM_DIR = "infra-k8s/jewelry-store"
-                        env.VALUES_FILE = "${env.HELM_DIR}/values.yaml"
-
                         sh """
-                            echo "🚀 Deploying to ${env.DEPLOY_ENV.toUpperCase()} environment..."
-                            echo "Namespace: ${env.K8S_NAMESPACE}"
+                            echo "🚀 Deploying to ${DEPLOY_ENV.toUpperCase()} namespace: ${K8S_NAMESPACE}"
 
-                            # 🔐 Create Secret
-                            kubectl delete secret jwt-secret -n ${env.K8S_NAMESPACE} --ignore-not-found
-                            kubectl create secret generic jwt-secret --from-literal=JWT_SECRET_KEY=\$JWT_SECRET_KEY -n ${env.K8S_NAMESPACE}
+                            # 🧩 Create namespace if missing
+                            kubectl get ns ${K8S_NAMESPACE} || kubectl create ns ${K8S_NAMESPACE}
 
-                            echo "✅ JWT secret created successfully."
+                            # 🔐 JWT Secret
+                            kubectl delete secret jwt-secret -n ${K8S_NAMESPACE} --ignore-not-found
+                            kubectl create secret generic jwt-secret --from-literal=JWT_SECRET_KEY=$JWT_SECRET_KEY -n ${K8S_NAMESPACE}
 
-                            # 🚀 Helm Deploy
-                            helm upgrade --install jewelry-store ${env.HELM_DIR} \\
-                                -f ${env.VALUES_FILE} \\
-                                --set image.registry=${env.REGISTRY_URL}/${env.DOCKERHUB_USER} \\
-                                --set image.backendTag=${env.BACKEND_VERSION}.${env.BUILD_NUMBER} \\
-                                --set image.authTag=${env.AUTH_VERSION}.${env.BUILD_NUMBER} \\
-                                --set image.frontendTag=${env.FRONTEND_VERSION}.${env.BUILD_NUMBER} \\
-                                -n ${env.K8S_NAMESPACE} \\
+                            # ⚓ Helm upgrade/install
+                            helm upgrade --install jewelry-store infra-k8s/jewelry-store \
+                                -f infra-k8s/jewelry-store/values.yaml \
+                                --set image.registry=${REGISTRY_URL}/${DOCKERHUB_USER} \
+                                --set image.backendTag=${BACKEND_VERSION}.${BUILD_NUMBER} \
+                                --set image.authTag=${AUTH_VERSION}.${BUILD_NUMBER} \
+                                --set image.frontendTag=${FRONTEND_VERSION}.${BUILD_NUMBER} \
+                                -n ${K8S_NAMESPACE} \
                                 --atomic --wait --timeout 10m
 
-                            echo "✅ ${env.DEPLOY_ENV.toUpperCase()} deployment completed!"
+                            echo "✅ Deployment completed successfully!"
                         """
                     }
                 }
@@ -207,26 +179,23 @@ pipeline {
 
         // ───────────────────────────────
         stage('Verify Deployment') {
-            when { expression { env.BRANCH_NAME =~ /(dev|stage|main)$/ } }
             steps {
                 sh """
-                    echo "📊 Verifying deployment in namespace: ${env.K8S_NAMESPACE}"
-                    helm status jewelry-store -n ${env.K8S_NAMESPACE} || true
-                    kubectl get pods -n ${env.K8S_NAMESPACE} -o wide || true
-                    kubectl get svc -n ${env.K8S_NAMESPACE} || true
-                    kubectl get ingress -n ${env.K8S_NAMESPACE} || echo "No Ingress"
+                    echo "📊 Verifying deployment..."
+                    kubectl get pods -n ${K8S_NAMESPACE} -o wide
+                    kubectl get svc -n ${K8S_NAMESPACE}
+                    kubectl get ingress -n ${K8S_NAMESPACE} || echo "No Ingress found"
                 """
             }
         }
 
         // ───────────────────────────────
         stage('Health Check') {
-            when { expression { env.BRANCH_NAME =~ /(dev|stage|main)$/ } }
             steps {
                 sh """
-                    echo "🔍 Checking pod readiness..."
-                    kubectl wait --for=condition=ready pod --all -n ${env.K8S_NAMESPACE} --timeout=5m || echo "⚠️ Some pods are not ready"
-                    kubectl get pods -n ${env.K8S_NAMESPACE}
+                    echo "🩺 Checking pod readiness..."
+                    kubectl wait --for=condition=ready pod --all -n ${K8S_NAMESPACE} --timeout=5m || echo "⚠️ Some pods not ready"
+                    kubectl get pods -n ${K8S_NAMESPACE}
                 """
             }
         }
@@ -236,35 +205,20 @@ pipeline {
     post {
         success {
             echo """
-            ============================================
             ✅ DEPLOYMENT SUCCESSFUL!
-            ============================================
-            Environment : ${env.DEPLOY_ENV.toUpperCase()}
-            Namespace   : ${env.K8S_NAMESPACE}
-            Build       : #${env.BUILD_NUMBER}
-            Branch      : ${env.BRANCH_NAME}
-            ============================================
+            Environment: ${env.DEPLOY_ENV}
+            Namespace: ${env.K8S_NAMESPACE}
+            Build: #${env.BUILD_NUMBER}
             """
         }
-
         failure {
-            echo """
-            ============================================
-            ❌ DEPLOYMENT FAILED!
-            ============================================
-            """
-            sh """
-                echo "🔍 Debug info:"
-                kubectl get pods -n ${env.K8S_NAMESPACE} || true
-                helm history jewelry-store -n ${env.K8S_NAMESPACE} || true
-            """
+            echo "❌ DEPLOYMENT FAILED!"
+            sh "kubectl get pods -n ${env.K8S_NAMESPACE} || true"
+            sh "helm history jewelry-store -n ${env.K8S_NAMESPACE} || true"
         }
-
         always {
-            sh """
-                echo "🏁 Pipeline finished for branch: ${env.BRANCH_NAME}"
-                docker system prune -f || true
-            """
+            sh "docker system prune -f || true"
+            echo "🏁 Pipeline finished for ${env.BRANCH_NAME}"
         }
     }
 }
