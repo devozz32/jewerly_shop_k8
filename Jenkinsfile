@@ -7,18 +7,16 @@ pipeline {
         // Registry Configuration
         REGISTRY_URL   = "docker.io"
         DOCKERHUB_USER = "talko32"
-        
+
         // Infrastructure Repository
         INFRA_REPO     = "https://github.com/devozz32/infra-k8s.git"
         INFRA_BRANCH   = "main"
-        
+
         // Project Configuration
         PROJECT_NAME   = ""
     }
 
     stages {
-
-        // ───────────────────────────────
         stage('Debug Environment') {
             steps {
                 script {
@@ -28,11 +26,7 @@ pipeline {
                         env.BRANCH_NAME.endsWith('main')  ? 'prod'  : 'none'
                     )
 
-                    env.K8S_NAMESPACE = (
-                        env.BRANCH_NAME.endsWith('dev')   ? 'dev'   :
-                        env.BRANCH_NAME.endsWith('stage') ? 'stage' :
-                        env.BRANCH_NAME.endsWith('main')  ? 'prod'  : 'default'
-                    )
+                    env.K8S_NAMESPACE = env.DEPLOY_ENV
 
                     echo """
                     ============================================
@@ -48,7 +42,6 @@ pipeline {
             }
         }
 
-        // ───────────────────────────────
         stage('Checkout Source') {
             steps {
                 checkout scm
@@ -60,7 +53,6 @@ pipeline {
             }
         }
 
-        // ───────────────────────────────
         stage('Get Versions') {
             when { expression { env.BRANCH_NAME =~ /(dev|stage|main)$/ } }
             steps {
@@ -86,7 +78,6 @@ pipeline {
             }
         }
 
-        // ───────────────────────────────
         stage('Build & Push Images') {
             when { expression { env.BRANCH_NAME =~ /(dev|stage|main)$/ } }
             steps {
@@ -97,7 +88,7 @@ pipeline {
                 )]) {
                     sh """
                         echo "🔐 Docker login..."
-                        echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
 
                         echo "🔨 Building images..."
                         docker build -t ${env.BACKEND_TAG} ./backend
@@ -115,7 +106,6 @@ pipeline {
             }
         }
 
-        // ───────────────────────────────
         stage('Checkout Infrastructure Repo') {
             when { expression { env.BRANCH_NAME =~ /(dev|stage|main)$/ } }
             steps {
@@ -129,7 +119,6 @@ pipeline {
             }
         }
 
-        // ───────────────────────────────
         stage('Install Helm') {
             when { expression { env.BRANCH_NAME =~ /(dev|stage|main)$/ } }
             steps {
@@ -145,7 +134,6 @@ pipeline {
             }
         }
 
-        // ───────────────────────────────
         stage('Manual Approval for Production') {
             when { expression { env.BRANCH_NAME.endsWith("main") } }
             steps {
@@ -153,42 +141,45 @@ pipeline {
             }
         }
 
-        // ───────────────────────────────
-        stage('Deploy via Helm') {
+        stage('Prepare JWT Secret Values') {
             when { expression { env.BRANCH_NAME =~ /(dev|stage|main)$/ } }
             steps {
                 withCredentials([string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')]) {
-                    script {
-                        env.HELM_DIR = "infra-k8s/jewelry-store"
-                        env.VALUES_FILE = "${env.HELM_DIR}/values.yaml"
-
-                        sh """
-                            echo "🚀 Deploying to ${env.DEPLOY_ENV.toUpperCase()} environment..."
-                            echo "Namespace: ${env.K8S_NAMESPACE}"
-                            echo ""
-
-                            export JWT_SECRET_KEY=\$JWT_SECRET_KEY
-
-                            helm upgrade --install jewelry-store ${env.HELM_DIR} \\
-                                -f ${env.VALUES_FILE} \\
-                                --set image.registry=${env.REGISTRY_URL}/${env.DOCKERHUB_USER} \\
-                                --set image.backendTag=${env.BACKEND_VERSION}.${env.BUILD_NUMBER} \\
-                                --set image.authTag=${env.AUTH_VERSION}.${env.BUILD_NUMBER} \\
-                                --set image.frontendTag=${env.FRONTEND_VERSION}.${env.BUILD_NUMBER} \\
-                                -n ${env.K8S_NAMESPACE} \\
-                                --wait \\
-                                --timeout 10m \\
-                                --atomic
-
-                            echo ""
-                            echo "✅ ${env.DEPLOY_ENV.toUpperCase()} deployment completed!"
-                        """
-                    }
+                    sh '''
+                        cp values.yaml values-temp.yaml
+                        yq e ".jwtSecret.key = \"$JWT_SECRET_KEY\"" -i values-temp.yaml
+                    '''
                 }
             }
         }
 
-        // ───────────────────────────────
+        stage('Deploy via Helm') {
+            when { expression { env.BRANCH_NAME =~ /(dev|stage|main)$/ } }
+            steps {
+                script {
+                    env.HELM_DIR = "infra-k8s/jewelry-store"
+                    env.VALUES_FILE = "${env.HELM_DIR}/values-temp.yaml"
+
+                    sh """
+                        echo "🚀 Deploying to ${env.DEPLOY_ENV.toUpperCase()} environment..."
+                        echo "Namespace: ${env.K8S_NAMESPACE}"
+                        echo ""
+
+                        helm upgrade --install jewelry-store ${env.HELM_DIR} \
+                            -f ${env.VALUES_FILE} \
+                            --namespace ${env.K8S_NAMESPACE} \
+                            --create-namespace \
+                            --wait \
+                            --timeout 10m \
+                            --atomic
+
+                        echo ""
+                        echo "✅ ${env.DEPLOY_ENV.toUpperCase()} deployment completed!"
+                    """
+                }
+            }
+        }
+
         stage('Verify Deployment') {
             when { expression { env.BRANCH_NAME =~ /(dev|stage|main)$/ } }
             steps {
@@ -202,7 +193,6 @@ pipeline {
             }
         }
 
-        // ───────────────────────────────
         stage('Health Check') {
             when { expression { env.BRANCH_NAME =~ /(dev|stage|main)$/ } }
             steps {
@@ -215,7 +205,6 @@ pipeline {
         }
     }
 
-    // ───────────────────────────────
     post {
         success {
             echo """
