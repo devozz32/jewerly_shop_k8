@@ -94,15 +94,18 @@ pipeline {
                         env.HELM_DIR = "infra-k8s/jewelry-store"
                         env.VALUES_FILE = "${env.HELM_DIR}/values.yaml"
 
-                        // Update values.yaml with new Docker Hub image tags
+                        // 🧩 החלפה של כל פקודות yq → sed
                         sh """
-                        yq e -i '.backend.image="${env.BACKEND_TAG}"' ${env.VALUES_FILE}
-                        yq e -i '.auth.image="${env.AUTH_TAG}"' ${env.VALUES_FILE}
-                        yq e -i '.frontend.image="${env.FRONTEND_TAG}"' ${env.VALUES_FILE}
-                        """
+                        echo "📝 Updating ${env.VALUES_FILE} with new image tags..."
 
-                        // Deploy using Helm
-                        sh """
+                        sed -i 's|image:.*store-backend.*|image: ${env.BACKEND_TAG}|' ${env.VALUES_FILE}
+                        sed -i 's|image:.*store-auth.*|image: ${env.AUTH_TAG}|' ${env.VALUES_FILE}
+                        sed -i 's|image:.*store-frontend.*|image: ${env.FRONTEND_TAG}|' ${env.VALUES_FILE}
+
+                        echo "✅ values.yaml updated successfully:"
+                        grep 'image:' ${env.VALUES_FILE}
+
+                        echo "🚀 Deploying with Helm..."
                         export JWT_SECRET_KEY=\$JWT_SECRET_KEY
                         helm upgrade --install jewelry-store ${env.HELM_DIR} -f ${env.VALUES_FILE} -n ${namespace} --create-namespace
                         """
