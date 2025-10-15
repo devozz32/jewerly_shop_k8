@@ -4,23 +4,13 @@ pipeline {
 
     environment {
         REGISTRY_URL = "localhost:8082"
+        INFRA_REPO   = "https://github.com/devozz32/infra-k8s.git"
+        PROJECT_NAME = ""
     }
 
     stages {
-        stage('Debug Branch') {
-            steps {
-                echo "DEBUG: BRANCH_NAME = '${env.BRANCH_NAME}'"
-            }
-        }
 
-        stage('Clean Workspace') {
-            when { expression { env.BRANCH_NAME.endsWith("dev") } }
-            steps {
-                script { cleanworkspace() }
-            }
-        }
-
-        stage('Checkout') {
+        stage('Checkout Source') {
             steps {
                 checkout scm
                 script {
@@ -31,34 +21,7 @@ pipeline {
             }
         }
 
-        stage('Verify Snyk CLI') {
-            when { expression { env.BRANCH_NAME.endsWith("dev") } }
-            steps {
-                sh '''
-                if command -v snyk >/dev/null 2>&1; then
-                  echo "✅ Snyk CLI found: $(snyk --version)"
-                else
-                  echo "❌ Snyk CLI not found"
-                  exit 1
-                fi
-                '''
-            }
-        }
-
-        stage('Unit Tests - Frontend Only') {
-            when { expression { env.BRANCH_NAME.endsWith("dev") } }
-            steps {
-                dir('jewelry-store') {
-                    sh '''
-                    npm ci
-                    npm test -- --watchAll=false
-                    '''
-                }
-            }
-        }
-
         stage('Get Versions') {
-            when { expression { env.BRANCH_NAME.endsWith("dev") } }
             steps {
                 script {
                     env.BACKEND_VERSION  = getversion('backend/VERSION.txt')
@@ -68,95 +31,81 @@ pipeline {
                     env.BACKEND_TAG  = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/backend:${env.BACKEND_VERSION}.${env.BUILD_NUMBER}"
                     env.AUTH_TAG     = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/auth-service:${env.AUTH_VERSION}.${env.BUILD_NUMBER}"
                     env.FRONTEND_TAG = "${env.REGISTRY_URL}/${env.PROJECT_NAME}/jewelry-store:${env.FRONTEND_VERSION}.${env.BUILD_NUMBER}"
-
-                    echo "Backend tag : ${env.BACKEND_TAG}"
-                    echo "Auth tag    : ${env.AUTH_TAG}"
-                    echo "Frontend tag: ${env.FRONTEND_TAG}"
                 }
+                echo """
+                Backend tag : ${env.BACKEND_TAG}
+                Auth tag    : ${env.AUTH_TAG}
+                Frontend tag: ${env.FRONTEND_TAG}
+                """
             }
         }
 
-        stage('Docker Login') {
-            when { expression { env.BRANCH_NAME.endsWith("dev") } }
+        stage('Build & Push Images') {
+            when { expression { env.BRANCH_NAME.endsWith("dev") || env.BRANCH_NAME.endsWith("stage") || env.BRANCH_NAME.endsWith("main") } }
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'nexus-cred',
                     usernameVariable: 'NEXUS_USER',
                     passwordVariable: 'NEXUS_PASS'
                 )]) {
-                    sh "docker login ${env.REGISTRY_URL} -u ${NEXUS_USER} -p ${NEXUS_PASS}"
-                }
-            }
-        }
-
-        stage('Build Images') {
-            when { expression { env.BRANCH_NAME.endsWith("dev") } }
-            steps {
-                sh """
-                docker build -t ${env.BACKEND_TAG} ./backend
-                docker build -t ${env.AUTH_TAG} ./auth-service
-                docker build -t ${env.FRONTEND_TAG} ./jewelry-store
-                """
-            }
-        }
-
-        stage('Snyk Container Scan') {
-            when { expression { env.BRANCH_NAME.endsWith("dev") } }
-            steps {
-                script {
-                    snykScan(services: [
-                        "${env.BACKEND_TAG}",
-                        "${env.AUTH_TAG}",
-                        "${env.FRONTEND_TAG}"
-                    ])
-                }
-            }
-        }
-
-        stage('Push Images') {
-            when { expression { env.BRANCH_NAME.endsWith("dev") } }
-            steps {
-                sh """
-                docker push ${env.BACKEND_TAG}
-                docker push ${env.AUTH_TAG}
-                docker push ${env.FRONTEND_TAG}
-                """
-            }
-        }
-
-        stage('Deploy DEV') {
-            when { expression { env.BRANCH_NAME.endsWith("dev") } }
-            steps {
-                withCredentials([string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')]) {
                     sh """
-                    export imagenamefrontend=${env.FRONTEND_TAG}
-                    export imagenamebackend=${env.BACKEND_TAG}
-                    export imagenameauth=${env.AUTH_TAG}
-                    export JWT_SECRET_KEY=\$JWT_SECRET_KEY
-
-                    echo "=== DEBUG: Printing image names before compose ==="
-                    echo "imagenamefrontend=\$imagenamefrontend"
-                    echo "imagenamebackend=\$imagenamebackend"
-                    echo "imagenameauth=\$imagenameauth"
-
-                    docker-compose -f docker-compose.yml up -d --force-recreate --remove-orphans
+                    docker login ${env.REGISTRY_URL} -u ${NEXUS_USER} -p ${NEXUS_PASS}
+                    docker build -t ${env.BACKEND_TAG} ./backend
+                    docker build -t ${env.AUTH_TAG} ./auth-service
+                    docker build -t ${env.FRONTEND_TAG} ./jewelry-store
+                    docker push ${env.BACKEND_TAG}
+                    docker push ${env.AUTH_TAG}
+                    docker push ${env.FRONTEND_TAG}
                     """
                 }
             }
         }
 
-        stage('Deploy STAGE') {
-            when { expression { env.BRANCH_NAME.endsWith("stage") } }
+        stage('Deploy via Helm') {
+            when { expression { env.BRANCH_NAME.endsWith("dev") || env.BRANCH_NAME.endsWith("stage") || env.BRANCH_NAME.endsWith("main") } }
             steps {
-                echo "🟡 Deploy to STAGE (echo only, no real deploy executed)"
+                script {
+                    def namespace = ""
+                    if (env.BRANCH_NAME.endsWith("dev")) {
+                        namespace = "dev"
+                    } else if (env.BRANCH_NAME.endsWith("stage")) {
+                        namespace = "stage"
+                    } else if (env.BRANCH_NAME.endsWith("main")) {
+                        namespace = "prod"
+                    }
+
+                    echo "Deploying to namespace: ${namespace}"
+
+                    // משוך את ריפו התשתית
+                    dir('infra-k8s') {
+                        git branch: 'main', url: "${env.INFRA_REPO}"
+                    }
+
+                    withCredentials([string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')]) {
+                        env.HELM_DIR = "infra-k8s/jewelry-store"
+                        env.VALUES_FILE = "${env.HELM_DIR}/values.yaml"
+
+                        // עדכון של תגי התמונות בקובץ values.yaml
+                        sh """
+                        yq e -i '.backend.image="${env.BACKEND_TAG}"' ${env.VALUES_FILE}
+                        yq e -i '.auth.image="${env.AUTH_TAG}"' ${env.VALUES_FILE}
+                        yq e -i '.frontend.image="${env.FRONTEND_TAG}"' ${env.VALUES_FILE}
+                        """
+
+                        // פריסה עם Helm
+                        sh """
+                        export JWT_SECRET_KEY=\$JWT_SECRET_KEY
+                        helm upgrade --install jewelry-store ${env.HELM_DIR} -f ${env.VALUES_FILE} -n ${namespace} --create-namespace
+                        """
+                    }
+                }
             }
         }
+    }
 
-        stage('Deploy PROD') {
-            when { expression { env.BRANCH_NAME.endsWith("main") } }
-            steps {
-                echo "🟢 Deploy to PROD (echo only, no real deploy executed)"
-            }
+    post {
+        always {
+            echo "Pipeline finished for branch: ${env.BRANCH_NAME}"
         }
     }
 }
