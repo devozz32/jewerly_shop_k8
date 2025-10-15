@@ -146,7 +146,7 @@ pipeline {
         }
 
         // ───────────────────────────────
-        stage('Deploy via Helm') {
+        stage('Deploy via Helm (Helm creates Secret)') {
             steps {
                 withCredentials([string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')]) {
                     script {
@@ -156,21 +156,18 @@ pipeline {
                             # 🧩 Create namespace if missing
                             kubectl get ns ${K8S_NAMESPACE} || kubectl create ns ${K8S_NAMESPACE}
 
-                            # 🔐 JWT Secret
-                            kubectl delete secret jwt-secret -n ${K8S_NAMESPACE} --ignore-not-found
-                            kubectl create secret generic jwt-secret --from-literal=JWT_SECRET_KEY=$JWT_SECRET_KEY -n ${K8S_NAMESPACE}
-
-                            # ⚓ Helm upgrade/install
+                            # ⚓ Helm upgrade/install — Helm עצמו ייצור את ה־Secret מתוך values
                             helm upgrade --install jewelry-store infra-k8s/jewelry-store \
                                 -f infra-k8s/jewelry-store/values.yaml \
                                 --set image.registry=${REGISTRY_URL}/${DOCKERHUB_USER} \
                                 --set image.backendTag=${BACKEND_VERSION}.${BUILD_NUMBER} \
                                 --set image.authTag=${AUTH_VERSION}.${BUILD_NUMBER} \
                                 --set image.frontendTag=${FRONTEND_VERSION}.${BUILD_NUMBER} \
+                                --set jwtSecret.key=$JWT_SECRET_KEY \
                                 -n ${K8S_NAMESPACE} \
                                 --atomic --wait --timeout 10m
 
-                            echo "✅ Deployment completed successfully!"
+                            echo "✅ Deployment completed successfully (Secret created by Helm)!"
                         """
                     }
                 }
