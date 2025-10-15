@@ -3,10 +3,10 @@ pipeline {
     agent { label 'jenkins-agent-pod' }
 
     environment {
-        REGISTRY_URL = "docker.io"  // Docker Hub base registry
+        REGISTRY_URL   = "docker.io"       // Docker Hub registry
         DOCKERHUB_USER = "talko32"
-        INFRA_REPO   = "https://github.com/devozz32/infra-k8s.git"
-        PROJECT_NAME = ""
+        INFRA_REPO     = "https://github.com/devozz32/infra-k8s.git"
+        PROJECT_NAME   = ""
     }
 
     stages {
@@ -29,11 +29,11 @@ pipeline {
                     env.AUTH_VERSION     = getversion('auth-service/VERSION.txt')
                     env.FRONTEND_VERSION = getversion('jewelry-store/VERSION.txt')
 
-                    // Docker Hub tags (user/repo:version)
                     env.BACKEND_TAG  = "${env.DOCKERHUB_USER}/store-backend:${env.BACKEND_VERSION}.${env.BUILD_NUMBER}"
                     env.AUTH_TAG     = "${env.DOCKERHUB_USER}/store-auth:${env.AUTH_VERSION}.${env.BUILD_NUMBER}"
                     env.FRONTEND_TAG = "${env.DOCKERHUB_USER}/store-frontend:${env.FRONTEND_VERSION}.${env.BUILD_NUMBER}"
                 }
+
                 echo """
                 Backend tag : ${env.BACKEND_TAG}
                 Auth tag    : ${env.AUTH_TAG}
@@ -101,12 +101,19 @@ pipeline {
                     helm version
                     '''
 
-                    // הפעלת הפריסה עם הסוד
-                    withCredentials([string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')]) {
+                    // 🧩 שימוש ב-kubeconfig מה-Credentials
+                    withCredentials([
+                        string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY'),
+                        file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG_FILE')
+                    ]) {
                         env.HELM_DIR = "infra-k8s/jewelry-store"
                         env.VALUES_FILE = "${env.HELM_DIR}/values.yaml"
 
                         sh """
+                        echo "📁 Using kubeconfig from Jenkins..."
+                        export KUBECONFIG=\$KUBECONFIG_FILE
+                        kubectl config current-context || true
+
                         echo "📝 Updating ${env.VALUES_FILE} with new image tags..."
 
                         sed -i 's|image:.*store-backend.*|image: ${env.BACKEND_TAG}|' ${env.VALUES_FILE}
@@ -118,7 +125,11 @@ pipeline {
 
                         echo "🚀 Deploying with Helm..."
                         export JWT_SECRET_KEY=\$JWT_SECRET_KEY
-                        helm upgrade --install jewelry-store ${env.HELM_DIR} -f ${env.VALUES_FILE} -n ${namespace} --create-namespace
+                        helm upgrade --install jewelry-store ${env.HELM_DIR} -f ${env.VALUES_FILE} -n ${namespace}
+
+                        echo "🔍 Checking deployment status..."
+                        kubectl get pods -n ${namespace} -o wide
+                        helm list -n ${namespace}
                         """
                     }
                 }
@@ -128,7 +139,7 @@ pipeline {
 
     post {
         always {
-            echo "Pipeline finished for branch: ${env.BRANCH_NAME}"
+            echo "🏁 Pipeline finished for branch: ${env.BRANCH_NAME}"
         }
     }
 }
