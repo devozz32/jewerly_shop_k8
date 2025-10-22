@@ -1,0 +1,5 @@
+apiVersion: v2
+name: luxe-jewelry-store
+version: 0.1.0
+description: Helm chart for Luxe Jewelry Store (frontend, backend, auth-service)
+type: application

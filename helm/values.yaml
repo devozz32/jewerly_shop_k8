@@ -1,0 +1,39 @@
+namespace: prod
+
+jwtSecret: "changeme-jwt-secret"
+
+image:
+  registry: docker.io/talko32
+  pullPolicy: Always
+  frontendTag: latest
+  backendTag: latest
+  authTag: latest
+
+frontend:
+  image:
+    name: frontend
+  service:
+    type: ClusterIP
+    port: 80
+  ingress:
+    enabled: true
+    host: "jewelry.local"
+    className: "nginx"
+    path: "/"
+
+backend:
+  image:
+    name: store-backend
+  service:
+    type: ClusterIP
+    port: 8000
+  env:
+    # 👇 התאמה לשם השירות האמיתי
+    AUTH_SERVICE_URL: "http://jewelry.local/auth"
+
+authService:
+  image:
+    name: store-auth
+  service:
+    type: ClusterIP
+    port: 8001

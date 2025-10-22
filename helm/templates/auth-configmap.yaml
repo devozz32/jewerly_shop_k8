@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-config
+  namespace: {{ .Values.namespace }}
+data:
+  # Add any auth-service-specific envs here if needed

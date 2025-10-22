@@ -1,0 +1,43 @@
+{{- if .Values.frontend.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jewelry-ingress
+  namespace: {{ .Values.namespace }}
+  annotations:
+    kubernetes.io/ingress.class: {{ .Values.frontend.ingress.className | quote }}
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: {{ .Values.frontend.ingress.className | quote }}
+  rules:
+    - host: {{ .Values.frontend.ingress.host }}
+      http:
+        paths:
+          # API - backend (strips /api prefix, forwards rest to backend)
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: backend
+                port:
+                  number: {{ .Values.backend.service.port }}
+
+          # Auth - auth-service (strips /auth prefix, forwards rest to auth)
+          - path: /auth(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: {{ .Values.authService.service.port }}
+
+          # Default - frontend (must come last, matches everything else)
+          - path: /()(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: {{ .Values.frontend.service.port }}
+{{- end }}

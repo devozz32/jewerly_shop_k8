@@ -1,0 +1,7 @@
+rapiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: {{ .Values.namespace }}
+data:
+  AUTH_SERVICE_URL: {{ .Values.backend.env.AUTH_SERVICE_URL | quote }}
