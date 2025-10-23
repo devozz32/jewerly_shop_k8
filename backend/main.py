@@ -149,7 +149,7 @@ user_carts_db = {}
 async def root():
     return {"message": "Welcome to Luxe Jewelry Store API"}
 
-@app.get("/api/products", response_model=List[Product])
+@app.get("/products", response_model=List[Product])
 async def get_products(category: Optional[str] = None):
     """Get all products or filter by category"""
     if category:
@@ -157,7 +157,7 @@ async def get_products(category: Optional[str] = None):
         return filtered_products
     return products_db
 
-@app.get("/api/products/{product_id}", response_model=Product)
+@app.get("/products/{product_id}", response_model=Product)
 async def get_product(product_id: int):
     """Get a specific product by ID"""
     product = next((p for p in products_db if p["id"] == product_id), None)
@@ -165,7 +165,7 @@ async def get_product(product_id: int):
         raise HTTPException(status_code=404, detail="Product not found")
     return product
 
-@app.post("/api/cart/{session_id}/add")
+@app.post("/cart/{session_id}/add")
 async def add_to_cart(
     session_id: str, 
     item: CartItemRequest,
@@ -207,7 +207,7 @@ async def add_to_cart(
     
     return {"message": "Item added to cart", "cart_items": len(cart)}
 
-@app.get("/api/cart", response_model=List[CartItem])
+@app.get("/cart", response_model=List[CartItem])
 async def get_cart(
     session_id: str = "default",
     current_user: dict = Depends(get_current_user)
@@ -221,7 +221,7 @@ async def get_cart(
         # Return session-based cart for anonymous users
         return carts_db.get(session_id, [])
 
-@app.delete("/api/cart/{session_id}/item/{item_id}")
+@app.delete("/cart/{session_id}/item/{item_id}")
 async def remove_from_cart(
     session_id: str, 
     item_id: str,
@@ -249,7 +249,7 @@ async def remove_from_cart(
     
     return {"message": "Item removed from cart", "cart_items": len(cart)}
 
-@app.put("/api/cart/{session_id}/item/{item_id}")
+@app.put("/cart/{session_id}/item/{item_id}")
 async def update_cart_item(
     session_id: str, 
     item_id: str, 
@@ -282,7 +282,7 @@ async def update_cart_item(
         item["quantity"] = quantity
         return {"message": "Item quantity updated"}
 
-@app.delete("/api/cart/{session_id}")
+@app.delete("/cart/{session_id}")
 async def clear_cart(
     session_id: str,
     current_user: dict = Depends(get_current_user)
@@ -298,7 +298,7 @@ async def clear_cart(
             carts_db[session_id] = []
     return {"message": "Cart cleared"}
 
-@app.get("/api/categories")
+@app.get("/categories")
 async def get_categories():
     """Get all product categories"""
     categories = list(set(p["category"] for p in products_db))

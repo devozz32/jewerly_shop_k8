@@ -4,13 +4,13 @@ set -e
 
 # Set your image names and tags here (must exist in Docker Hub)
 IMAGE_REGISTRY="docker.io/talko32"
-FRONTEND_IMAGE="frontend"
-FRONTEND_TAG="0.1.0.41"
-BACKEND_IMAGE="backend"
-BACKEND_TAG="0.1.0.41"
+FRONTEND_IMAGE="store-frontend"
+FRONTEND_TAG="0.1.0.49"
+BACKEND_IMAGE="store-backend"
+BACKEND_TAG="0.1.0.49"
 AUTH_IMAGE="store-auth"
-AUTH_TAG="0.1.0.34"
-JWT_SECRET="t2323"
+AUTH_TAG="0.1.0.49"
+JWT_SECRET="t23235"
 NAMESPACE="prod"
 IMAGE_PULL_POLICY="Always"
 
