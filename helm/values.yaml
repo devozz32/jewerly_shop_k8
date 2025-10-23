@@ -11,7 +11,7 @@ image:
 
 frontend:
   image:
-    name: frontend
+    name: store-frontend
   service:
     type: ClusterIP
     port: 80
