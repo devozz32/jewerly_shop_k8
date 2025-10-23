@@ -101,6 +101,22 @@ pipeline {
             }
         }
 
+        stage('Snyk Container Scan (non-blocking)') {
+            when { expression { env.BRANCH_NAME.endsWith("dev") } }
+            steps {
+                script {
+                    catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                        snykScan(services: [
+                            "${env.BACKEND_VERSION}.${env.BUILD_NUMBER}",
+                            "${env.AUTH_VERSION}.${env.BUILD_NUMBER}",
+                            "${env.FRONTEND_VERSION}.${env.BUILD_NUMBER}"
+                        ])
+                    }
+                    echo "Snyk scan completed (pipeline continues even if vulnerabilities found)."
+                }
+            }
+        }
+
         stage('Install Helm & kubectl (if missing)') {
             steps {
                 sh '''#!/bin/bash
