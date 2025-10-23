@@ -145,7 +145,7 @@ pipeline {
                                 --set image.backendTag=${BACKEND_VERSION}.${BUILD_NUMBER} \
                                 --set image.authTag=${AUTH_VERSION}.${BUILD_NUMBER} \
                                 --set image.frontendTag=${FRONTEND_VERSION}.${BUILD_NUMBER} \
-                                --set jwtSecret="\${JWT_SECRET_KEY}" \
+                                --set-string jwtSecret="${JWT_SECRET_KEY}" \
                                 -n ${K8S_NAMESPACE} \
                                 --create-namespace \
                                 --atomic --wait --timeout 10m
