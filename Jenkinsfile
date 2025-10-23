@@ -6,8 +6,10 @@ pipeline {
     environment {
         REGISTRY_URL   = "docker.io"
         DOCKERHUB_USER = "talko32"
-        INFRA_REPO     = "https://github.com/devozz32/infra-k8s.git"
-        INFRA_BRANCH   = "main"
+
+        BACKEND_IMAGE  = "store-backend"
+        AUTH_IMAGE     = "store-auth"
+        FRONTEND_IMAGE = "store-frontend"
     }
 
     stages {
@@ -83,25 +85,17 @@ pipeline {
                         echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
 
                         echo "Building Docker images..."
-                        docker build -t ${DOCKERHUB_USER}/store-backend:${BACKEND_VERSION}.${BUILD_NUMBER} ./backend
-                        docker build -t ${DOCKERHUB_USER}/store-auth:${AUTH_VERSION}.${BUILD_NUMBER} ./auth-service
-                        docker build -t ${DOCKERHUB_USER}/frontend:${FRONTEND_VERSION}.${BUILD_NUMBER} ./jewelry-store
+                        docker build -t ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${BACKEND_VERSION}.${BUILD_NUMBER} ./backend
+                        docker build -t ${DOCKERHUB_USER}/${AUTH_IMAGE}:${AUTH_VERSION}.${BUILD_NUMBER} ./auth-service
+                        docker build -t ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${FRONTEND_VERSION}.${BUILD_NUMBER} ./jewelry-store
 
                         echo "Pushing images to Docker Hub..."
-                        docker push ${DOCKERHUB_USER}/store-backend:${BACKEND_VERSION}.${BUILD_NUMBER}
-                        docker push ${DOCKERHUB_USER}/store-auth:${AUTH_VERSION}.${BUILD_NUMBER}
-                        docker push ${DOCKERHUB_USER}/frontend:${FRONTEND_VERSION}.${BUILD_NUMBER}
+                        docker push ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${BACKEND_VERSION}.${BUILD_NUMBER}
+                        docker push ${DOCKERHUB_USER}/${AUTH_IMAGE}:${AUTH_VERSION}.${BUILD_NUMBER}
+                        docker push ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${FRONTEND_VERSION}.${BUILD_NUMBER}
 
                         echo "Images pushed successfully."
                     '''
-                }
-            }
-        }
-
-        stage('Checkout Infrastructure Repo') {
-            steps {
-                dir('infra-k8s') {
-                    git branch: "${env.INFRA_BRANCH}", url: "${env.INFRA_REPO}"
                 }
             }
         }
@@ -141,11 +135,13 @@ pipeline {
                         sh """
                             echo "Deploying to ${DEPLOY_ENV} (namespace: ${K8S_NAMESPACE})"
                             
-                            # Deploy using Helm - it will create namespace via namespace.yaml
-                            helm upgrade --install jewelry-store infra-k8s/jewelry-store/helm \
-                                -f infra-k8s/jewelry-store/helm/values.yaml \
+                            helm upgrade --install jewelry-store ./helm \
+                                -f ./helm/values.yaml \
                                 --set namespace=${K8S_NAMESPACE} \
                                 --set image.registry=${DOCKERHUB_USER} \
+                                --set image.backendName=${BACKEND_IMAGE} \
+                                --set image.authName=${AUTH_IMAGE} \
+                                --set image.frontendName=${FRONTEND_IMAGE} \
                                 --set image.backendTag=${BACKEND_VERSION}.${BUILD_NUMBER} \
                                 --set image.authTag=${AUTH_VERSION}.${BUILD_NUMBER} \
                                 --set image.frontendTag=${FRONTEND_VERSION}.${BUILD_NUMBER} \
@@ -154,7 +150,7 @@ pipeline {
                                 --create-namespace \
                                 --atomic --wait --timeout 10m
 
-                            echo "✅ Deployment completed successfully."
+                            echo "Deployment completed successfully."
                         """
                     }
                 }
@@ -178,7 +174,7 @@ pipeline {
             steps {
                 sh """
                     echo "Waiting for pods to be ready..."
-                    kubectl wait --for=condition=ready pod --all -n ${K8S_NAMESPACE} --timeout=5m || echo "⚠️  Some pods not ready"
+                    kubectl wait --for=condition=ready pod --all -n ${K8S_NAMESPACE} --timeout=5m || echo "Some pods not ready"
                     
                     echo "Final pod status:"
                     kubectl get pods -n ${K8S_NAMESPACE}
@@ -191,23 +187,23 @@ pipeline {
         success {
             echo """
             ============================================
-            ✅ DEPLOYMENT SUCCESSFUL
+            DEPLOYMENT SUCCESSFUL
             ============================================
             Environment: ${env.DEPLOY_ENV}
             Namespace: ${env.K8S_NAMESPACE}
             Build: #${env.BUILD_NUMBER}
             
             Images Deployed:
-            - Backend: ${env.BACKEND_VERSION}.${env.BUILD_NUMBER}
-            - Auth: ${env.AUTH_VERSION}.${env.BUILD_NUMBER}
-            - Frontend: ${env.FRONTEND_VERSION}.${env.BUILD_NUMBER}
+            - Backend: ${env.BACKEND_IMAGE}:${env.BACKEND_VERSION}.${env.BUILD_NUMBER}
+            - Auth: ${env.AUTH_IMAGE}:${env.AUTH_VERSION}.${env.BUILD_NUMBER}
+            - Frontend: ${env.FRONTEND_IMAGE}:${env.FRONTEND_VERSION}.${env.BUILD_NUMBER}
             ============================================
             """
         }
         failure {
             echo """
             ============================================
-            ❌ DEPLOYMENT FAILED
+            DEPLOYMENT FAILED
             ============================================
             Environment: ${env.DEPLOY_ENV}
             Namespace: ${env.K8S_NAMESPACE}
