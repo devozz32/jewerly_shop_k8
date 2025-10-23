@@ -84,18 +84,18 @@ pipeline {
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
-                    sh '''
-                        set -euxo pipefail
+                    sh '''#!/bin/bash
+                    set -euxo pipefail
 
-                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                    echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
 
-                        docker build -t ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${BACKEND_VERSION}.${BUILD_NUMBER} ./backend
-                        docker build -t ${DOCKERHUB_USER}/${AUTH_IMAGE}:${AUTH_VERSION}.${BUILD_NUMBER} ./auth-service
-                        docker build -t ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${FRONTEND_VERSION}.${BUILD_NUMBER} ./jewelry-store
+                    docker build -t ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${BACKEND_VERSION}.${BUILD_NUMBER} ./backend
+                    docker build -t ${DOCKERHUB_USER}/${AUTH_IMAGE}:${AUTH_VERSION}.${BUILD_NUMBER} ./auth-service
+                    docker build -t ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${FRONTEND_VERSION}.${BUILD_NUMBER} ./jewelry-store
 
-                        docker push ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${BACKEND_VERSION}.${BUILD_NUMBER}
-                        docker push ${DOCKERHUB_USER}/${AUTH_IMAGE}:${AUTH_VERSION}.${BUILD_NUMBER}
-                        docker push ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${FRONTEND_VERSION}.${BUILD_NUMBER}
+                    docker push ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${BACKEND_VERSION}.${BUILD_NUMBER}
+                    docker push ${DOCKERHUB_USER}/${AUTH_IMAGE}:${AUTH_VERSION}.${BUILD_NUMBER}
+                    docker push ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${FRONTEND_VERSION}.${BUILD_NUMBER}
                     '''
                 }
             }
@@ -103,32 +103,32 @@ pipeline {
 
         stage('Install Helm & kubectl (if missing)') {
             steps {
-                sh '''
-                    set -e
-                    if ! command -v helm >/dev/null 2>&1; then
-                        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-                    fi
+                sh '''#!/bin/bash
+                set -e
+                if ! command -v helm >/dev/null 2>&1; then
+                    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+                fi
 
-                    if ! command -v kubectl >/dev/null 2>&1; then
-                        KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
-                        curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-                        install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-                    fi
+                if ! command -v kubectl >/dev/null 2>&1; then
+                    KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
+                    curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+                    install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+                fi
 
-                    helm version
-                    kubectl version --client
+                helm version
+                kubectl version --client
                 '''
             }
         }
 
         stage('Verify Namespace Exists') {
             steps {
-                sh '''
-                    set -e
-                    if ! kubectl get namespace ${K8S_NAMESPACE} >/dev/null 2>&1; then
-                        echo "Namespace '${K8S_NAMESPACE}' does not exist. Aborting by policy (no auto-creation)."
-                        exit 1
-                    fi
+                sh '''#!/bin/bash
+                set -e
+                if ! kubectl get namespace ${K8S_NAMESPACE} >/dev/null 2>&1; then
+                    echo "Namespace '${K8S_NAMESPACE}' does not exist. Aborting by policy (no auto-creation)."
+                    exit 1
+                fi
                 '''
             }
         }
@@ -143,27 +143,27 @@ pipeline {
         stage('Deploy via Helm') {
             steps {
                 withCredentials([string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')]) {
-                    sh '''
-                        set -euxo pipefail
+                    sh '''#!/bin/bash
+                    set -euxo pipefail
 
-                        VALUES_FILE="./helm/values-${DEPLOY_ENV}.yaml"
-                        if [ ! -f "$VALUES_FILE" ]; then
-                          VALUES_FILE="./helm/values.yaml"
-                        fi
+                    VALUES_FILE="./helm/values-${DEPLOY_ENV}.yaml"
+                    if [ ! -f "$VALUES_FILE" ]; then
+                      VALUES_FILE="./helm/values.yaml"
+                    fi
 
-                        helm upgrade --install jewelry-store ./helm \
-                            -f "$VALUES_FILE" \
-                            --set namespace=${K8S_NAMESPACE} \
-                            --set image.registry=${DOCKERHUB_USER} \
-                            --set image.backendName=${BACKEND_IMAGE} \
-                            --set image.authName=${AUTH_IMAGE} \
-                            --set image.frontendName=${FRONTEND_IMAGE} \
-                            --set image.backendTag=${BACKEND_VERSION}.${BUILD_NUMBER} \
-                            --set image.authTag=${AUTH_VERSION}.${BUILD_NUMBER} \
-                            --set image.frontendTag=${FRONTEND_VERSION}.${BUILD_NUMBER} \
-                            --set-string jwtSecret="${JWT_SECRET_KEY}" \
-                            -n ${K8S_NAMESPACE} \
-                            --atomic --wait --timeout 10m
+                    helm upgrade --install jewelry-store ./helm \
+                        -f "$VALUES_FILE" \
+                        --set namespace=${K8S_NAMESPACE} \
+                        --set image.registry=${DOCKERHUB_USER} \
+                        --set image.backendName=${BACKEND_IMAGE} \
+                        --set image.authName=${AUTH_IMAGE} \
+                        --set image.frontendName=${FRONTEND_IMAGE} \
+                        --set image.backendTag=${BACKEND_VERSION}.${BUILD_NUMBER} \
+                        --set image.authTag=${AUTH_VERSION}.${BUILD_NUMBER} \
+                        --set image.frontendTag=${FRONTEND_VERSION}.${BUILD_NUMBER} \
+                        --set-string jwtSecret="${JWT_SECRET_KEY}" \
+                        -n ${K8S_NAMESPACE} \
+                        --atomic --wait --timeout 10m
                     '''
                 }
             }
@@ -171,20 +171,20 @@ pipeline {
 
         stage('Verify Deployment') {
             steps {
-                sh '''
-                    set -e
-                    kubectl get deploy,po,svc,ing -n ${K8S_NAMESPACE} -o wide || true
-                    kubectl get configmap,secret -n ${K8S_NAMESPACE} || true
+                sh '''#!/bin/bash
+                set -e
+                kubectl get deploy,po,svc,ing -n ${K8S_NAMESPACE} -o wide || true
+                kubectl get configmap,secret -n ${K8S_NAMESPACE} || true
                 '''
             }
         }
 
         stage('Health Check') {
             steps {
-                sh '''
-                    set -e
-                    kubectl wait --for=condition=available deploy --all -n ${K8S_NAMESPACE} --timeout=5m || true
-                    kubectl get pods -n ${K8S_NAMESPACE}
+                sh '''#!/bin/bash
+                set -e
+                kubectl wait --for=condition=available deploy --all -n ${K8S_NAMESPACE} --timeout=5m || true
+                kubectl get pods -n ${K8S_NAMESPACE}
                 '''
             }
         }
@@ -208,11 +208,15 @@ pipeline {
             """
         }
         failure {
-            sh 'kubectl get all -n ${K8S_NAMESPACE} || true'
-            sh 'helm history jewelry-store -n ${K8S_NAMESPACE} || true'
+            sh '''#!/bin/bash
+            kubectl get all -n ${K8S_NAMESPACE} || true
+            helm history jewelry-store -n ${K8S_NAMESPACE} || true
+            '''
         }
         always {
-            sh 'docker system prune -f || true'
+            sh '''#!/bin/bash
+            docker system prune -f || true
+            '''
             echo "Pipeline finished for ${env.BRANCH_NAME}"
         }
     }
