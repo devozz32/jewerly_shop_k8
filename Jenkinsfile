@@ -3,6 +3,13 @@
 pipeline {
     agent { label 'jenkins-agent-pod' }
 
+    options {
+        timestamps()
+        ansiColor('xterm')
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        disableConcurrentBuilds()
+    }
+
     environment {
         REGISTRY_URL   = "docker.io"
         DOCKERHUB_USER = "talko32"
@@ -18,7 +25,6 @@ pipeline {
             steps {
                 script {
                     def branch = env.BRANCH_NAME ?: "main"
-
                     if (branch == "main" || branch.contains("main")) {
                         env.DEPLOY_ENV = "prod"
                     } else if (branch == "stage" || branch.contains("stage")) {
@@ -26,7 +32,6 @@ pipeline {
                     } else {
                         env.DEPLOY_ENV = "dev"
                     }
-
                     env.K8S_NAMESPACE = env.DEPLOY_ENV
 
                     echo """
@@ -81,35 +86,31 @@ pipeline {
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
                     sh '''
-                        echo "Logging in to Docker Hub..."
-                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                        set -euxo pipefail
 
-                        echo "Building Docker images..."
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+
                         docker build -t ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${BACKEND_VERSION}.${BUILD_NUMBER} ./backend
                         docker build -t ${DOCKERHUB_USER}/${AUTH_IMAGE}:${AUTH_VERSION}.${BUILD_NUMBER} ./auth-service
                         docker build -t ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${FRONTEND_VERSION}.${BUILD_NUMBER} ./jewelry-store
 
-                        echo "Pushing images to Docker Hub..."
                         docker push ${DOCKERHUB_USER}/${BACKEND_IMAGE}:${BACKEND_VERSION}.${BUILD_NUMBER}
                         docker push ${DOCKERHUB_USER}/${AUTH_IMAGE}:${AUTH_VERSION}.${BUILD_NUMBER}
                         docker push ${DOCKERHUB_USER}/${FRONTEND_IMAGE}:${FRONTEND_VERSION}.${BUILD_NUMBER}
-
-                        echo "Images pushed successfully."
                     '''
                 }
             }
         }
 
-        stage('Install Helm & kubectl') {
+        stage('Install Helm & kubectl (if missing)') {
             steps {
                 sh '''
+                    set -e
                     if ! command -v helm >/dev/null 2>&1; then
-                        echo "Installing Helm..."
                         curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
                     fi
 
                     if ! command -v kubectl >/dev/null 2>&1; then
-                        echo "Installing kubectl..."
                         KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
                         curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
                         install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
@@ -117,6 +118,18 @@ pipeline {
 
                     helm version
                     kubectl version --client
+                '''
+            }
+        }
+
+        stage('Verify Namespace Exists') {
+            steps {
+                sh '''
+                    set -e
+                    if ! kubectl get namespace ${K8S_NAMESPACE} >/dev/null 2>&1; then
+                        echo "Namespace '${K8S_NAMESPACE}' does not exist. Aborting by policy (no auto-creation)."
+                        exit 1
+                    fi
                 '''
             }
         }
@@ -131,54 +144,49 @@ pipeline {
         stage('Deploy via Helm') {
             steps {
                 withCredentials([string(credentialsId: 'JWT_SECRET_KEY', variable: 'JWT_SECRET_KEY')]) {
-                    script {
-                        sh """
-                            echo "Deploying to ${DEPLOY_ENV} (namespace: ${K8S_NAMESPACE})"
-                            
-                            helm upgrade --install jewelry-store ./helm \
-                                -f ./helm/values.yaml \
-                                --set namespace=${K8S_NAMESPACE} \
-                                --set image.registry=${DOCKERHUB_USER} \
-                                --set image.backendName=${BACKEND_IMAGE} \
-                                --set image.authName=${AUTH_IMAGE} \
-                                --set image.frontendName=${FRONTEND_IMAGE} \
-                                --set image.backendTag=${BACKEND_VERSION}.${BUILD_NUMBER} \
-                                --set image.authTag=${AUTH_VERSION}.${BUILD_NUMBER} \
-                                --set image.frontendTag=${FRONTEND_VERSION}.${BUILD_NUMBER} \
-                                --set-string jwtSecret="${JWT_SECRET_KEY}" \
-                                -n ${K8S_NAMESPACE} \
-                                --create-namespace \
-                                --atomic --wait --timeout 10m
+                    sh '''
+                        set -euxo pipefail
 
-                            echo "Deployment completed successfully."
-                        """
-                    }
+                        VALUES_FILE="./helm/values-${DEPLOY_ENV}.yaml"
+                        if [ ! -f "$VALUES_FILE" ]; then
+                          VALUES_FILE="./helm/values.yaml"
+                        fi
+
+                        helm upgrade --install jewelry-store ./helm \
+                            -f "$VALUES_FILE" \
+                            --set namespace=${K8S_NAMESPACE} \
+                            --set image.registry=${DOCKERHUB_USER} \
+                            --set image.backendName=${BACKEND_IMAGE} \
+                            --set image.authName=${AUTH_IMAGE} \
+                            --set image.frontendName=${FRONTEND_IMAGE} \
+                            --set image.backendTag=${BACKEND_VERSION}.${BUILD_NUMBER} \
+                            --set image.authTag=${AUTH_VERSION}.${BUILD_NUMBER} \
+                            --set image.frontendTag=${FRONTEND_VERSION}.${BUILD_NUMBER} \
+                            --set-string jwtSecret="${JWT_SECRET_KEY}" \
+                            -n ${K8S_NAMESPACE} \
+                            --atomic --wait --timeout 10m
+                    '''
                 }
             }
         }
 
         stage('Verify Deployment') {
             steps {
-                sh """
-                    echo "Verifying deployment in namespace: ${K8S_NAMESPACE}"
-                    kubectl get pods -n ${K8S_NAMESPACE} -o wide
-                    kubectl get svc -n ${K8S_NAMESPACE}
-                    kubectl get ingress -n ${K8S_NAMESPACE} || echo "No Ingress found"
-                    kubectl get configmap -n ${K8S_NAMESPACE}
-                    kubectl get secret -n ${K8S_NAMESPACE}
-                """
+                sh '''
+                    set -e
+                    kubectl get deploy,po,svc,ing -n ${K8S_NAMESPACE} -o wide || true
+                    kubectl get configmap,secret -n ${K8S_NAMESPACE} || true
+                '''
             }
         }
 
         stage('Health Check') {
             steps {
-                sh """
-                    echo "Waiting for pods to be ready..."
-                    kubectl wait --for=condition=ready pod --all -n ${K8S_NAMESPACE} --timeout=5m || echo "Some pods not ready"
-                    
-                    echo "Final pod status:"
+                sh '''
+                    set -e
+                    kubectl wait --for=condition=available deploy --all -n ${K8S_NAMESPACE} --timeout=5m || true
                     kubectl get pods -n ${K8S_NAMESPACE}
-                """
+                '''
             }
         }
     }
@@ -192,7 +200,7 @@ pipeline {
             Environment: ${env.DEPLOY_ENV}
             Namespace: ${env.K8S_NAMESPACE}
             Build: #${env.BUILD_NUMBER}
-            
+
             Images Deployed:
             - Backend: ${env.BACKEND_IMAGE}:${env.BACKEND_VERSION}.${env.BUILD_NUMBER}
             - Auth: ${env.AUTH_IMAGE}:${env.AUTH_VERSION}.${env.BUILD_NUMBER}
@@ -201,21 +209,11 @@ pipeline {
             """
         }
         failure {
-            echo """
-            ============================================
-            DEPLOYMENT FAILED
-            ============================================
-            Environment: ${env.DEPLOY_ENV}
-            Namespace: ${env.K8S_NAMESPACE}
-            Build: #${env.BUILD_NUMBER}
-            ============================================
-            """
-            sh "kubectl get pods -n ${env.K8S_NAMESPACE} || true"
-            sh "kubectl describe pods -n ${env.K8S_NAMESPACE} || true"
-            sh "helm history jewelry-store -n ${env.K8S_NAMESPACE} || true"
+            sh 'kubectl get all -n ${K8S_NAMESPACE} || true'
+            sh 'helm history jewelry-store -n ${K8S_NAMESPACE} || true'
         }
         always {
-            sh "docker system prune -f || true"
+            sh 'docker system prune -f || true'
             echo "Pipeline finished for ${env.BRANCH_NAME}"
         }
     }
