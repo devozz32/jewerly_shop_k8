@@ -102,7 +102,7 @@ pipeline {
         }
 
         stage('Snyk Container Scan (non-blocking)') {
-            when { expression { env.BRANCH_NAME.endsWith("dev") } }
+            
             steps {
                 script {
                     catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
